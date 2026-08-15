@@ -1,0 +1,9 @@
+.build/
+.swiftpm/
+
+mcp-server/node_modules/
+mcp-server/dist/
+
+.DS_Store
+
+.claude/settings.local.json

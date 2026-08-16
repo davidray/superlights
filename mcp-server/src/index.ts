@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -7,6 +8,7 @@ import { parseFxData } from "./fxdata.js";
 import { scenes } from "./scenes.js";
 import * as actions from "./actions.js";
 import { playSceneLive, stopStream } from "./liveStreamController.js";
+import { getSchedule, setSchedule } from "./schedule.js";
 
 const server = new McpServer({ name: "wled-lights", version: "0.1.0" });
 
@@ -357,6 +359,48 @@ server.tool(
   "Stop a background live scene stream started by play_scene_live. WLED returns to its own effect engine shortly after streaming stops.",
   { device: z.string() },
   async ({ device }) => text(stopStream(device) ? `Stopped streaming to ${device}.` : `No active stream for ${device}.`)
+);
+
+// ---------------------------------------------------------------------------
+// Schedule (delegated to Home Assistant — see mcp-server/schedule.json)
+//
+// WLED's own timers can't be reached over its API and have no date-range concept, so the
+// actual scheduling engine is Home Assistant: a handful of generic automations there read
+// their timing from a few helper entities instead of hardcoded values, and these two tools
+// just read/write those helpers over HA's REST API. Requires HA_BASE_URL and HA_TOKEN.
+
+server.tool(
+  "get_schedule",
+  "Read the current lighting schedule (on/off times, holiday date range, which scene, and whether the schedule is enabled at all) from Home Assistant's helper entities.",
+  {},
+  async () => {
+    try {
+      return text(await getSchedule());
+    } catch (err) {
+      return errorText(err);
+    }
+  }
+);
+
+server.tool(
+  "set_schedule",
+  "Update the lighting schedule by writing to Home Assistant's helper entities. Only the fields you provide are changed. Requires the generic schedule automations to already be set up in HA (see mcp-server/deploy).",
+  {
+    onTime: z.string().regex(/^\d{2}:\d{2}$/).optional().describe("24h HH:MM, e.g. '17:30'"),
+    offTime: z.string().regex(/^\d{2}:\d{2}$/).optional().describe("24h HH:MM"),
+    seasonStart: z.string().regex(/^\d{2}-\d{2}$/).optional().describe("MM-DD, e.g. '11-20' — current year is assumed"),
+    seasonEnd: z.string().regex(/^\d{2}-\d{2}$/).optional().describe("MM-DD"),
+    scene: z.string().optional().describe("Name of a WLED preset, effect, or custom scene for the automation to apply"),
+    enabled: z.boolean().optional().describe("Turn the whole schedule on/off without touching its other settings"),
+  },
+  async (update) => {
+    try {
+      await setSchedule(update);
+      return text({ updated: update, current: await getSchedule() });
+    } catch (err) {
+      return errorText(err);
+    }
+  }
 );
 
 const transport = new StdioServerTransport();

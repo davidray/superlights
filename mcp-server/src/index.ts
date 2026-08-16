@@ -4,9 +4,9 @@ import { z } from "zod";
 import { listDevices, resolveDevice } from "./devices.js";
 import { WledClient, findByName, type WledSegment } from "./wledClient.js";
 import { parseFxData } from "./fxdata.js";
-import { scenes, findScene } from "./scenes.js";
-import { loadCoordinateMap, allLedPositions } from "./coordinateMap.js";
-import { DdpSender } from "./ddp.js";
+import { scenes } from "./scenes.js";
+import * as actions from "./actions.js";
+import { playSceneLive, stopStream } from "./liveStreamController.js";
 
 const server = new McpServer({ name: "wled-lights", version: "0.1.0" });
 
@@ -133,7 +133,7 @@ server.tool(
   { device: z.string(), on: z.union([z.boolean(), z.literal("toggle")]) },
   async ({ device, on }) => {
     try {
-      await clientFor(device).postState({ on: on === "toggle" ? "t" : on });
+      await actions.setPower(device, on);
       return text(`ok`);
     } catch (err) {
       return errorText(err);
@@ -147,7 +147,7 @@ server.tool(
   { device: z.string(), brightness: z.number().int().min(1).max(255) },
   async ({ device, brightness }) => {
     try {
-      await clientFor(device).postState({ bri: brightness });
+      await actions.setBrightness(device, brightness);
       return text("ok");
     } catch (err) {
       return errorText(err);
@@ -174,30 +174,8 @@ server.tool(
   },
   async ({ device, effect, segment, speed, intensity, palette, colors }) => {
     try {
-      const client = clientFor(device);
-      const effects = await client.getEffects();
-      const fxId = typeof effect === "number" ? effect : findByName(effects, effect);
-      if (fxId === undefined) return errorText(new Error(`No effect matching "${effect}". Call list_effects first.`));
-
-      let palId: number | undefined;
-      if (palette !== undefined) {
-        const palettes = await client.getPalettes();
-        palId = typeof palette === "number" ? palette : findByName(palettes, palette);
-        if (palId === undefined) return errorText(new Error(`No palette matching "${palette}". Call list_palettes first.`));
-      }
-
-      const seg: WledSegment = { fx: fxId };
-      if (speed !== undefined) seg.sx = speed;
-      if (intensity !== undefined) seg.ix = intensity;
-      if (palId !== undefined) seg.pal = palId;
-      if (colors !== undefined) seg.col = colors;
-
-      if (segment !== undefined) {
-        await client.postState({ seg: [{ id: segment, ...seg }] });
-      } else {
-        await client.postState({ seg });
-      }
-      return text({ applied: { effect: effects[fxId], ...seg } });
+      const result = await actions.runEffect(device, effect, { segment, speed, intensity, palette, colors });
+      return text({ applied: { effect: result.effectName, ...result.applied } });
     } catch (err) {
       return errorText(err);
     }
@@ -265,9 +243,7 @@ server.tool(
   { device: z.string(), slot: z.number().int().min(1).max(250), transitionMs: z.number().int().min(0).optional() },
   async ({ device, slot, transitionMs }) => {
     try {
-      const state: Record<string, unknown> = { ps: slot };
-      if (transitionMs !== undefined) state.tt = Math.round(transitionMs / 100);
-      await clientFor(device).postState(state);
+      await actions.applyPreset(device, slot, transitionMs);
       return text("ok");
     } catch (err) {
       return errorText(err);
@@ -343,24 +319,7 @@ server.tool(
 // Custom scenes (spatially-aware animations, distinct from WLED's built-in effects)
 // Rendered against a coordinate map (see calibration/*.json) and streamed live over
 // DDP, or previewed by the Mac simulator app via the local preview HTTP server.
-
-interface LiveStream {
-  timer: ReturnType<typeof setInterval>;
-  sender: DdpSender;
-  stopTimeout?: ReturnType<typeof setTimeout>;
-}
-
-const liveStreams = new Map<string, LiveStream>();
-
-function stopStream(device: string): boolean {
-  const stream = liveStreams.get(device);
-  if (!stream) return false;
-  clearInterval(stream.timer);
-  if (stream.stopTimeout) clearTimeout(stream.stopTimeout);
-  stream.sender.close();
-  liveStreams.delete(device);
-  return true;
-}
+// Streaming itself lives in liveStreamController.ts, shared with the HA trigger server.
 
 server.tool(
   "list_scenes",
@@ -380,40 +339,13 @@ server.tool(
   },
   async ({ device, scene: sceneId, durationSeconds, fps }) => {
     try {
-      const scene = findScene(sceneId);
-      if (!scene) return errorText(new Error(`Unknown scene "${sceneId}". Call list_scenes first.`));
-      const host = resolveDevice(device);
-      const map = loadCoordinateMap(device);
-      const positions = allLedPositions(map);
-
-      stopStream(device);
-      const sender = new DdpSender(host);
-      const start = Date.now();
-
-      const tick = async () => {
-        const t = (Date.now() - start) / 1000;
-        try {
-          await sender.sendFrame(positions.map((p) => scene.render(p, t)));
-        } catch (err) {
-          console.error(`[play_scene_live] send failed for ${device}: ${(err as Error).message}`);
-        }
-      };
-
-      const timer = setInterval(tick, 1000 / fps);
-      const stream: LiveStream = { timer, sender };
-      liveStreams.set(device, stream);
-      await tick();
-
-      if (durationSeconds !== undefined && durationSeconds <= 20) {
-        await new Promise((resolve) => setTimeout(resolve, durationSeconds * 1000));
-        stopStream(device);
-        return text(`Played "${scene.name}" on ${device} for ${durationSeconds}s.`);
+      const result = await playSceneLive(device, sceneId, { durationSeconds, fps });
+      if (!result.backgrounded) {
+        return text(`Played "${result.scene.name}" on ${device} for ${durationSeconds}s.`);
       }
-
-      if (durationSeconds !== undefined) {
-        stream.stopTimeout = setTimeout(() => stopStream(device), durationSeconds * 1000);
-      }
-      return text(`Streaming "${scene.name}" to ${device} in the background${durationSeconds ? ` for ${durationSeconds}s` : " (call stop_live to cancel)"}.`);
+      return text(
+        `Streaming "${result.scene.name}" to ${device} in the background${durationSeconds ? ` for ${durationSeconds}s` : " (call stop_live to cancel)"}.`
+      );
     } catch (err) {
       return errorText(err);
     }

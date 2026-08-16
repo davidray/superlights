@@ -1,0 +1,30 @@
+# Runs the WLED trigger server continuously on the same box as Home Assistant, so
+# HA's automations (time/sunrise-sunset/date-range triggers) can fire scenes without
+# depending on any laptop being awake.
+#
+# Setup on the Pi:
+#   sudo cp wled-trigger.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now wled-trigger
+#   journalctl -u wled-trigger -f          # logs
+#
+# Adjust WorkingDirectory/User below to match where you cloned the repo and which
+# user runs it. Find node's path with `which node` if it's not at /usr/bin/node
+# (nvm installs, in particular, usually put it somewhere under ~/.nvm/versions).
+
+[Unit]
+Description=Superlights WLED trigger server (for Home Assistant automations)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/superlights/mcp-server
+EnvironmentFile=-/home/pi/superlights/mcp-server/.env
+ExecStart=/usr/bin/node dist/triggerServer.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "preview": "node dist/previewServer.js",
+    "trigger": "node dist/triggerServer.js",
     "dev": "tsc --watch"
   },
   "dependencies": {

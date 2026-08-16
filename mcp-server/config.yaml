@@ -1,0 +1,16 @@
+name: "Superlights WLED Trigger"
+version: "0.1.0"
+slug: "wled_trigger"
+description: "HTTP endpoint for triggering WLED scenes from Home Assistant automations"
+url: "https://github.com/davidray/superlights"
+arch:
+  - aarch64
+  - armv7
+  - amd64
+startup: application
+boot: auto
+host_network: true
+options:
+  trigger_token: "changeme"
+schema:
+  trigger_token: str

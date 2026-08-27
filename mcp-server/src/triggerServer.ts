@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./loadEnv.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import * as actions from "./actions.js";
 import { playSceneLive, stopStream } from "./liveStreamController.js";

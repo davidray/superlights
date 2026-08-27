@@ -2,7 +2,7 @@
   "device": "eaves",
   "capturedAt": "counts confirmed via live Scan-effect physical count on 2026-08-27; positions still hand-traced from reference photos, not measured",
   "placeholder": true,
-  "note": "LED counts (39 + 151) are real, confirmed by counting a physical 4-red/4-white striped pattern on the actual installed strips. The x/y positions along each run are still an approximate multi-gable shape traced by eye from photos, not a real flash-and-photograph calibration -- good enough to preview scenes, not accurate per-LED placement yet.",
+  "note": "LED counts (39 + 159) are real, confirmed by counting a physical 4-red/4-white striped pattern on the actual installed strips. The x/y positions along each run are still an approximate multi-gable shape traced by eye from photos, not a real flash-and-photograph calibration -- good enough to preview scenes, not accurate per-LED placement yet.",
   "imageWidth": 1,
   "imageHeight": 1,
   "runs": [
@@ -26,15 +26,15 @@
       "id": "top-roofline",
       "segment": 1,
       "startIndex": 0,
-      "endIndex": 150,
+      "endIndex": 158,
       "deviceOffset": 39,
       "waypoints": [
         { "index": 0, "x": 0.52, "y": 0.28 },
-        { "index": 20, "x": 0.58, "y": 0.35 },
-        { "index": 45, "x": 0.68, "y": 0.37 },
-        { "index": 70, "x": 0.77, "y": 0.29 },
-        { "index": 95, "x": 0.85, "y": 0.36 },
-        { "index": 150, "x": 0.93, "y": 0.4 }
+        { "index": 21, "x": 0.58, "y": 0.35 },
+        { "index": 47, "x": 0.68, "y": 0.37 },
+        { "index": 74, "x": 0.77, "y": 0.29 },
+        { "index": 100, "x": 0.85, "y": 0.36 },
+        { "index": 158, "x": 0.93, "y": 0.4 }
       ]
     }
   ]

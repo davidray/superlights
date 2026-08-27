@@ -82,6 +82,12 @@ const server = createServer(async (req, res) => {
   if (TOKEN) {
     const auth = req.headers.authorization;
     if (auth !== `Bearer ${TOKEN}`) {
+      // Never log the actual secret values -- just enough metadata to tell failure modes apart.
+      console.error(
+        `[triggerServer] auth mismatch: header ${auth ? "present" : "MISSING"}, ` +
+          `starts-with-Bearer=${auth?.startsWith("Bearer ") ?? false}, ` +
+          `received-len=${auth?.replace(/^Bearer /, "").length ?? 0}, expected-len=${TOKEN.length}`
+      );
       return send(res, 401, { ok: false, error: "missing or invalid Authorization: Bearer <token>" });
     }
   }

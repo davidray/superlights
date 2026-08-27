@@ -8,7 +8,7 @@ import { parseFxData } from "./fxdata.js";
 import { scenes } from "./scenes.js";
 import * as actions from "./actions.js";
 import { playSceneLive, stopStream } from "./liveStreamController.js";
-import { getSchedule, setSchedule } from "./schedule.js";
+import { triggerServer } from "./triggerServerClient.js";
 
 const server = new McpServer({ name: "wled-lights", version: "0.1.0" });
 
@@ -362,20 +362,24 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
-// Schedule (delegated to Home Assistant — see mcp-server/schedule.json)
+// Holiday schedule
 //
-// WLED's own timers can't be reached over its API and have no date-range concept, so the
-// actual scheduling engine is Home Assistant: a handful of generic automations there read
-// their timing from a few helper entities instead of hardcoded values, and these two tools
-// just read/write those helpers over HA's REST API. Requires HA_BASE_URL and HA_TOKEN.
+// A small rules engine that runs entirely inside the always-on trigger server (see
+// scheduler.ts) -- no Home Assistant automations/helpers involved. Three priority
+// tiers, highest first: one-off overrides (special events), holiday windows
+// (recurring annual date ranges), default schedule (every other day). onTime/offTime
+// accept "HH:MM" or the literal "dusk"/"dawn", resolved daily from the configured
+// location. Requires TRIGGER_SERVER_URL and TRIGGER_SERVER_TOKEN in mcp-server/.env.
+
+const timeValue = z.union([z.string().regex(/^\d{2}:\d{2}$/), z.enum(["dusk", "dawn"])]).describe("24h 'HH:MM', or the literal 'dusk'/'dawn' to resolve daily from location");
 
 server.tool(
-  "get_schedule",
-  "Read the current lighting schedule (on/off times, holiday date range, which scene, and whether the schedule is enabled at all) from Home Assistant's helper entities.",
+  "list_schedule",
+  "Read the full holiday schedule: location, default schedule, all holiday windows, and all one-off overrides.",
   {},
   async () => {
     try {
-      return text(await getSchedule());
+      return text(await triggerServer.getSchedule());
     } catch (err) {
       return errorText(err);
     }
@@ -383,20 +387,103 @@ server.tool(
 );
 
 server.tool(
-  "set_schedule",
-  "Update the lighting schedule by writing to Home Assistant's helper entities. Only the fields you provide are changed. Requires the generic schedule automations to already be set up in HA (see mcp-server/deploy).",
-  {
-    onTime: z.string().regex(/^\d{2}:\d{2}$/).optional().describe("24h HH:MM, e.g. '17:30'"),
-    offTime: z.string().regex(/^\d{2}:\d{2}$/).optional().describe("24h HH:MM"),
-    seasonStart: z.string().regex(/^\d{2}-\d{2}$/).optional().describe("MM-DD, e.g. '11-20' — current year is assumed"),
-    seasonEnd: z.string().regex(/^\d{2}-\d{2}$/).optional().describe("MM-DD"),
-    scene: z.string().optional().describe("Name of a WLED preset, effect, or custom scene for the automation to apply"),
-    enabled: z.boolean().optional().describe("Turn the whole schedule on/off without touching its other settings"),
-  },
-  async (update) => {
+  "set_schedule_location",
+  "Set the latitude/longitude used to resolve 'dusk'/'dawn' schedule times.",
+  { latitude: z.number(), longitude: z.number() },
+  async ({ latitude, longitude }) => {
     try {
-      await setSchedule(update);
-      return text({ updated: update, current: await getSchedule() });
+      return text(await triggerServer.setLocation({ latitude, longitude }));
+    } catch (err) {
+      return errorText(err);
+    }
+  }
+);
+
+server.tool(
+  "set_default_schedule",
+  "Set the base everyday schedule (lowest priority — active whenever no holiday window or override applies).",
+  {
+    onTime: timeValue,
+    offTime: timeValue,
+    device: z.string(),
+    scene: z.string().describe("Name of a custom scene (see list_scenes) to stream live"),
+    enabled: z.boolean().default(true),
+  },
+  async (schedule) => {
+    try {
+      return text(await triggerServer.setDefaultSchedule(schedule));
+    } catch (err) {
+      return errorText(err);
+    }
+  }
+);
+
+server.tool(
+  "add_holiday_window",
+  "Add or update (by id) a recurring annual holiday window — beats the default schedule, loses to any active override.",
+  {
+    id: z.string().describe("Stable identifier, e.g. 'christmas'. Reuse to update an existing window."),
+    name: z.string(),
+    seasonStart: z.string().regex(/^\d{2}-\d{2}$/).describe("MM-DD, e.g. '11-20'"),
+    seasonEnd: z.string().regex(/^\d{2}-\d{2}$/).describe("MM-DD — may be before seasonStart to wrap the new year, e.g. start=11-20 end=01-05"),
+    onTime: timeValue,
+    offTime: timeValue,
+    device: z.string(),
+    scene: z.string(),
+    enabled: z.boolean().default(true),
+  },
+  async (window) => {
+    try {
+      return text(await triggerServer.upsertWindow(window));
+    } catch (err) {
+      return errorText(err);
+    }
+  }
+);
+
+server.tool(
+  "remove_holiday_window",
+  "Remove a holiday window by id.",
+  { id: z.string() },
+  async ({ id }) => {
+    try {
+      return text(await triggerServer.removeWindow(id));
+    } catch (err) {
+      return errorText(err);
+    }
+  }
+);
+
+server.tool(
+  "add_override",
+  "Add or update (by id) a one-off special-event override (birthday, anniversary, a specific game day) — highest priority, beats both holiday windows and the default schedule for its date.",
+  {
+    id: z.string().describe("Stable identifier. Reuse to update an existing override."),
+    name: z.string(),
+    date: z.string().describe("'YYYY-MM-DD' for a specific one-time date, or 'MM-DD' if recurring is true"),
+    recurring: z.boolean().default(false).describe("true for an annual date like a birthday; false for a one-time date like a specific game"),
+    onTime: timeValue,
+    offTime: timeValue,
+    device: z.string(),
+    scene: z.string(),
+    enabled: z.boolean().default(true),
+  },
+  async (override) => {
+    try {
+      return text(await triggerServer.upsertOverride(override));
+    } catch (err) {
+      return errorText(err);
+    }
+  }
+);
+
+server.tool(
+  "remove_override",
+  "Remove an override by id.",
+  { id: z.string() },
+  async ({ id }) => {
+    try {
+      return text(await triggerServer.removeOverride(id));
     } catch (err) {
       return errorText(err);
     }

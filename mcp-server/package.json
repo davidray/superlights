@@ -17,10 +17,12 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
     "dotenv": "^17.4.2",
+    "suncalc": "^2.0.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/suncalc": "^1.9.2",
     "typescript": "^5.7.2"
   }
 }

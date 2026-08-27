@@ -2,17 +2,32 @@ import "./loadEnv.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import * as actions from "./actions.js";
 import { playSceneLive, stopStream } from "./liveStreamController.js";
+import {
+  loadConfig,
+  upsertWindow,
+  removeWindow,
+  upsertOverride,
+  removeOverride,
+  setLocation,
+  setDefaultSchedule,
+  type HolidayWindow,
+  type Override,
+  type Location,
+  type DefaultSchedule,
+} from "./holidaySchedule.js";
+import { startScheduler } from "./scheduler.js";
 
-// A small always-on HTTP endpoint meant to run somewhere that's never asleep (e.g. the
-// same Raspberry Pi as Home Assistant), so HA's own scheduler/automations — which already
-// handle time-of-day, sunrise/sunset, and date-range conditions well — can trigger WLED
-// scenes without needing WLED's own (JSON-API-inaccessible, date-range-less) timers.
+// A small always-on HTTP endpoint meant to run somewhere that's never asleep (the
+// same box as Home Assistant, via this add-on). Two jobs:
+//   POST /trigger        -- one-shot commands, for ad-hoc control (HA automations, etc.)
+//   /schedule/*          -- manage the holiday-window/override schedule this process
+//                           runs itself (see scheduler.ts) -- no HA automation involved.
 
 const PORT = Number(process.env.TRIGGER_SERVER_PORT ?? 8788);
 const TOKEN = process.env.TRIGGER_SERVER_TOKEN;
 
 if (!TOKEN) {
-  console.error("[triggerServer] WARNING: TRIGGER_SERVER_TOKEN is not set — /trigger is unauthenticated. Set it in .env before exposing this beyond localhost.");
+  console.error("[triggerServer] WARNING: TRIGGER_SERVER_TOKEN is not set — endpoints are unauthenticated. Set it in .env before exposing this beyond localhost.");
 }
 
 interface TriggerBody {
@@ -34,6 +49,11 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on("end", () => resolve(data));
     req.on("error", reject);
   });
+}
+
+async function readJson<T>(req: IncomingMessage): Promise<T> {
+  const raw = await readBody(req);
+  return JSON.parse(raw) as T;
 }
 
 async function handleTrigger(body: TriggerBody): Promise<unknown> {
@@ -75,14 +95,9 @@ async function handleTrigger(body: TriggerBody): Promise<unknown> {
 }
 
 const server = createServer(async (req, res) => {
-  if (req.method !== "POST" || req.url !== "/trigger") {
-    return send(res, 404, { ok: false, error: "POST /trigger is the only endpoint" });
-  }
-
   if (TOKEN) {
     const auth = req.headers.authorization;
     if (auth !== `Bearer ${TOKEN}`) {
-      // Never log the actual secret values -- just enough metadata to tell failure modes apart.
       console.error(
         `[triggerServer] auth mismatch: header ${auth ? "present" : "MISSING"}, ` +
           `starts-with-Bearer=${auth?.startsWith("Bearer ") ?? false}, ` +
@@ -92,16 +107,46 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
+
   try {
-    const raw = await readBody(req);
-    const body = JSON.parse(raw) as TriggerBody;
-    const result = await handleTrigger(body);
-    send(res, 200, result);
+    if (req.method === "POST" && url.pathname === "/trigger") {
+      return send(res, 200, await handleTrigger(await readJson<TriggerBody>(req)));
+    }
+
+    if (req.method === "GET" && url.pathname === "/schedule") {
+      return send(res, 200, loadConfig());
+    }
+
+    if (req.method === "POST" && url.pathname === "/schedule/location") {
+      return send(res, 200, setLocation(await readJson<Location>(req)));
+    }
+
+    if (req.method === "POST" && url.pathname === "/schedule/default") {
+      return send(res, 200, setDefaultSchedule(await readJson<DefaultSchedule>(req)));
+    }
+
+    if (req.method === "POST" && url.pathname === "/schedule/windows") {
+      return send(res, 200, upsertWindow(await readJson<HolidayWindow>(req)));
+    }
+    if (req.method === "DELETE" && url.pathname.startsWith("/schedule/windows/")) {
+      return send(res, 200, removeWindow(decodeURIComponent(url.pathname.slice("/schedule/windows/".length))));
+    }
+
+    if (req.method === "POST" && url.pathname === "/schedule/overrides") {
+      return send(res, 200, upsertOverride(await readJson<Override>(req)));
+    }
+    if (req.method === "DELETE" && url.pathname.startsWith("/schedule/overrides/")) {
+      return send(res, 200, removeOverride(decodeURIComponent(url.pathname.slice("/schedule/overrides/".length))));
+    }
+
+    return send(res, 404, { ok: false, error: "no such route" });
   } catch (err) {
-    send(res, 400, { ok: false, error: (err as Error).message });
+    return send(res, 400, { ok: false, error: (err as Error).message });
   }
 });
 
 server.listen(PORT, () => {
   console.error(`WLED trigger server listening on http://0.0.0.0:${PORT}${TOKEN ? "" : " (no auth token set)"}`);
+  startScheduler();
 });

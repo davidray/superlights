@@ -11,7 +11,7 @@ RUN npm ci && npm run build && npm prune --omit=dev
 # Defaults only -- seeded into /config on first run by run.sh, never overwritten on
 # rebuild, so edits made through the addon_config mount (Config Editor/Studio Code
 # Server) persist across updates instead of being baked back to these values.
-COPY devices.json schedule.json ./defaults/
+COPY devices.json holidaySchedule.json ./defaults/
 COPY calibration ./defaults/calibration
 
 COPY run.sh /

@@ -1,8 +1,0 @@
-{
-  "onTime": "input_datetime.wled_on_time",
-  "offTime": "input_datetime.wled_off_time",
-  "seasonStart": "input_datetime.wled_season_start",
-  "seasonEnd": "input_datetime.wled_season_end",
-  "scene": "input_text.wled_scene_name",
-  "enabled": "input_boolean.wled_schedule_enabled"
-}

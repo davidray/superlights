@@ -1,40 +1,40 @@
 {
   "device": "eaves",
-  "capturedAt": "placeholder — hand-traced from reference photos, not measured",
+  "capturedAt": "counts confirmed via live Scan-effect physical count on 2026-08-27; positions still hand-traced from reference photos, not measured",
   "placeholder": true,
-  "note": "Approximate multi-gable roofline (garage, tall two-story gable, porch gable, right gable) traced by eye from photos. Replace with real waypoints once the flash-and-photograph calibration is done — positions here are a reasonable shape for previewing scenes, not accurate per-LED.",
+  "note": "LED counts (39 + 151) are real, confirmed by counting a physical 4-red/4-white striped pattern on the actual installed strips. The x/y positions along each run are still an approximate multi-gable shape traced by eye from photos, not a real flash-and-photograph calibration -- good enough to preview scenes, not accurate per-LED placement yet.",
   "imageWidth": 1,
   "imageHeight": 1,
   "runs": [
     {
-      "id": "zone-a",
+      "id": "lower-roofline",
       "segment": 0,
       "startIndex": 0,
-      "endIndex": 599,
+      "endIndex": 38,
       "deviceOffset": 0,
       "waypoints": [
         { "index": 0, "x": 0.06, "y": 0.44 },
-        { "index": 120, "x": 0.2, "y": 0.4 },
-        { "index": 220, "x": 0.27, "y": 0.3 },
-        { "index": 320, "x": 0.32, "y": 0.19 },
-        { "index": 420, "x": 0.4, "y": 0.32 },
-        { "index": 520, "x": 0.47, "y": 0.36 },
-        { "index": 599, "x": 0.52, "y": 0.28 }
+        { "index": 8, "x": 0.2, "y": 0.4 },
+        { "index": 14, "x": 0.27, "y": 0.3 },
+        { "index": 20, "x": 0.32, "y": 0.19 },
+        { "index": 27, "x": 0.4, "y": 0.32 },
+        { "index": 33, "x": 0.47, "y": 0.36 },
+        { "index": 38, "x": 0.52, "y": 0.28 }
       ]
     },
     {
-      "id": "zone-b",
+      "id": "top-roofline",
       "segment": 1,
       "startIndex": 0,
-      "endIndex": 599,
-      "deviceOffset": 600,
+      "endIndex": 150,
+      "deviceOffset": 39,
       "waypoints": [
         { "index": 0, "x": 0.52, "y": 0.28 },
-        { "index": 80, "x": 0.58, "y": 0.35 },
-        { "index": 180, "x": 0.68, "y": 0.37 },
-        { "index": 280, "x": 0.77, "y": 0.29 },
-        { "index": 380, "x": 0.85, "y": 0.36 },
-        { "index": 599, "x": 0.93, "y": 0.4 }
+        { "index": 20, "x": 0.58, "y": 0.35 },
+        { "index": 45, "x": 0.68, "y": 0.37 },
+        { "index": 70, "x": 0.77, "y": 0.29 },
+        { "index": 95, "x": 0.85, "y": 0.36 },
+        { "index": 150, "x": 0.93, "y": 0.4 }
       ]
     }
   ]

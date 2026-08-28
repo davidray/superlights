@@ -72,6 +72,18 @@ export const scenes: Scene[] = [
     description: "Static warm white across every LED. Useful as a calibration/baseline scene.",
     render: () => [255, 180, 110],
   },
+  {
+    id: "birthday-confetti",
+    name: "Birthday Confetti",
+    description: "Rapid, colorful random flashes across the whole house against a dark background — festive and high-energy, for birthdays and celebrations.",
+    render: (ctx, t) => {
+      const frame = Math.floor(t * 6);
+      const twinkle = hash(ctx.deviceIndex, frame);
+      if (twinkle <= 0.75) return [0, 0, 0];
+      const hue = hash(ctx.deviceIndex, frame + 1000);
+      return hslToRgb(hue, 0.9, 0.55);
+    },
+  },
 ];
 
 export function findScene(id: string): Scene | undefined {

@@ -133,6 +133,26 @@ against the same rendering pipeline as the built-in scenes. Ask for it to
 keep running ("...for the rest of the night") or for a fixed duration; either
 way, `stop_live` cancels it.
 
+This is also the right home for a one-off personal/team-color variant —
+e.g. a "game day" chase in one household's team colors — rather than adding
+it as a permanent `scenes.ts` entry that ships to every installer. It's a
+two-color version of the same wrapped-band-chase math as the built-in
+`patriotic-wave` scene, expressed as a `SceneSpec` (see `sceneSpec.ts`):
+
+```json
+{
+  "name": "Game Day",
+  "palette": [[0, 46, 93], [255, 255, 255]],
+  "pattern": "chase",
+  "bandWidth": 0.125,
+  "speed": 0.17
+}
+```
+
+Swap in your own team's/school's colors and tune `bandWidth` (band count)
+and `speed` (chase rate) to taste, then pass this as `scene` to
+`play_scene_live` in place of a scene `id`.
+
 ## Security note
 
 The add-on runs with `host_network: true`, binding its HTTP server directly

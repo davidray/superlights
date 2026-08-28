@@ -14,12 +14,28 @@ export class DdpSender {
   private socket = dgram.createSocket("udp4");
   private seq = 0;
 
+  // Reused across sendFrame calls to avoid per-frame allocation/GC churn during
+  // long-running live streams (up to 60fps, potentially indefinite duration —
+  // see play_scene_live). pixelBuf is resized on demand rather than up front
+  // because the frame size isn't known until the first sendFrame call (and, in
+  // principle, could change between calls if the caller's LED count changes).
+  // headerPool grows on demand and is never shrunk — headers are tiny (10
+  // bytes) and every byte is overwritten on each use, so stale slots are
+  // harmless. This assumes sendFrame calls for a given sender aren't issued
+  // concurrently (true for how liveStreamController drives it: each tick
+  // awaits the previous sendFrame before the next is issued).
+  private pixelBuf: Buffer | null = null;
+  private headerPool: Buffer[] = [];
+
   constructor(private host: string, private port: number = DDP_PORT) {}
 
   /** pixels must already be in the device's flat DDP buffer order (deviceIndex order). */
   async sendFrame(pixels: RGB[]): Promise<void> {
     const totalBytes = pixels.length * 3;
-    const buf = Buffer.alloc(totalBytes);
+    if (!this.pixelBuf || this.pixelBuf.length !== totalBytes) {
+      this.pixelBuf = Buffer.alloc(totalBytes);
+    }
+    const buf = this.pixelBuf;
     pixels.forEach(([r, g, b], i) => {
       buf[i * 3] = r;
       buf[i * 3 + 1] = g;
@@ -29,11 +45,16 @@ export class DdpSender {
     this.seq = (this.seq % 15) + 1;
 
     const sends: Promise<void>[] = [];
+    let chunkIndex = 0;
     for (let offset = 0; offset < totalBytes; offset += MAX_PIXELS_PER_PACKET * 3) {
       const chunkLen = Math.min(MAX_PIXELS_PER_PACKET * 3, totalBytes - offset);
       const isLast = offset + chunkLen >= totalBytes;
 
-      const header = Buffer.alloc(10);
+      let header = this.headerPool[chunkIndex];
+      if (!header) {
+        header = Buffer.alloc(10);
+        this.headerPool[chunkIndex] = header;
+      }
       header[0] = FLAG_VERSION1 | (isLast ? FLAG_PUSH : 0);
       header[1] = this.seq;
       header[2] = DATA_TYPE_RGB888;
@@ -41,13 +62,16 @@ export class DdpSender {
       header.writeUInt32BE(offset, 4);
       header.writeUInt16BE(chunkLen, 8);
 
-      const packet = Buffer.concat([header, buf.subarray(offset, offset + chunkLen)]);
-      sends.push(this.send(packet));
+      // Pass the header and pixel slice as separate buffers rather than
+      // Buffer.concat-ing a new packet each chunk — dgram's send() accepts an
+      // array of buffers and writes them out as one datagram without an extra copy.
+      sends.push(this.send([header, buf.subarray(offset, offset + chunkLen)]));
+      chunkIndex++;
     }
     await Promise.all(sends);
   }
 
-  private send(packet: Buffer): Promise<void> {
+  private send(packet: Buffer | Buffer[]): Promise<void> {
     return new Promise((resolve, reject) => {
       this.socket.send(packet, this.port, this.host, (err) => (err ? reject(err) : resolve()));
     });

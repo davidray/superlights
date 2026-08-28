@@ -149,3 +149,10 @@ deploy loop, and notes on using Claude Code to work on this repo.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## A note on how this was built
+
+Most of this codebase — the MCP tools, the trigger add-on, the scheduler, the
+scene rendering — was written by Claude (Anthropic), working directly with
+the repo owner through Claude Code. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for how that's worked in practice.

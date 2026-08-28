@@ -2,7 +2,8 @@ import "./loadEnv.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { listDevices, resolveDevice } from "./devices.js";
+import { listDevices, resolveDevice, saveDevice, removeDevice } from "./devices.js";
+import { tryLoadCoordinateMap, saveCoordinateMap, type CoordinateMap } from "./coordinateMap.js";
 import { WledClient, findByName, type WledSegment } from "./wledClient.js";
 import { parseFxData } from "./fxdata.js";
 import { scenes } from "./scenes.js";
@@ -71,6 +72,44 @@ server.tool(
         currentPreset: state.ps,
         segments,
       });
+    } catch (err) {
+      return errorText(err);
+    }
+  }
+);
+
+server.tool(
+  "add_device",
+  "Register a WLED device by name and IP/hostname. Writes both the local devices.json (used by this MCP server for direct control) and the trigger add-on's copy (used for scheduling), if TRIGGER_SERVER_URL/TOKEN are configured -- a device generally needs to be registered in both places to work end-to-end.",
+  { name: z.string(), host: z.string().describe("IP address or hostname, e.g. 192.168.1.50") },
+  async ({ name, host }) => {
+    try {
+      const local = saveDevice(name, host);
+      try {
+        const remote = await triggerServer.upsertDevice(name, host);
+        return text({ local, remote });
+      } catch (err) {
+        return text({ local, remoteError: `Saved locally, but couldn't reach the trigger add-on: ${(err as Error).message}` });
+      }
+    } catch (err) {
+      return errorText(err);
+    }
+  }
+);
+
+server.tool(
+  "remove_device",
+  "Remove a WLED device by name from both the local devices.json and the trigger add-on's copy, if configured.",
+  { name: z.string() },
+  async ({ name }) => {
+    try {
+      const local = removeDevice(name);
+      try {
+        const remote = await triggerServer.removeDevice(name);
+        return text({ local, remote });
+      } catch (err) {
+        return text({ local, remoteError: `Removed locally, but couldn't reach the trigger add-on: ${(err as Error).message}` });
+      }
     } catch (err) {
       return errorText(err);
     }
@@ -374,6 +413,60 @@ server.tool(
   "Stop a background live scene stream started by play_scene_live. WLED returns to its own effect engine shortly after streaming stops.",
   { device: z.string() },
   async ({ device }) => text(stopStream(device) ? `Stopped streaming to ${device}.` : `No active stream for ${device}.`)
+);
+
+const waypoint = z.object({
+  index: z.number().int().describe("LED index local to this run"),
+  x: z.number().min(0).max(1).describe("Normalized horizontal position, 0-1"),
+  y: z.number().min(0).max(1).describe("Normalized vertical position, 0-1"),
+});
+const coordinateMapRun = z.object({
+  id: z.string().describe("Human-readable run name, e.g. 'lower-roofline'"),
+  segment: z.number().int().describe("WLED segment id this run corresponds to"),
+  startIndex: z.number().int(),
+  endIndex: z.number().int(),
+  deviceOffset: z.number().int().describe("Where this run starts in the device's flat DDP pixel buffer"),
+  waypoints: z.array(waypoint).min(1).describe("Ordered by index; position between waypoints is linearly interpolated"),
+});
+const coordinateMap = z.object({
+  device: z.string(),
+  capturedAt: z.string().describe("Free-text note on how/when this was captured"),
+  referenceImage: z.string().optional(),
+  imageWidth: z.number().optional(),
+  imageHeight: z.number().optional(),
+  runs: z.array(coordinateMapRun).min(1),
+});
+
+server.tool(
+  "get_calibration",
+  "Get a device's coordinate map (the physical x/y layout used by custom scenes to react to real LED position). Reads the local calibration/<device>.json used directly by this MCP server. Returns null if the device hasn't been calibrated yet.",
+  { device: z.string() },
+  async ({ device }) => {
+    try {
+      return text(tryLoadCoordinateMap(device));
+    } catch (err) {
+      return errorText(err);
+    }
+  }
+);
+
+server.tool(
+  "set_calibration",
+  "Save a device's coordinate map (see get_calibration for the shape). Writes both the local calibration/<device>.json (used by this MCP server directly) and the trigger add-on's copy (used for scheduled/ad-hoc scenes), if TRIGGER_SERVER_URL/TOKEN are configured -- a device's calibration generally needs to be saved to both places to work end-to-end.",
+  { device: z.string(), map: coordinateMap },
+  async ({ device, map }) => {
+    try {
+      saveCoordinateMap(device, map as CoordinateMap);
+      try {
+        await triggerServer.setCalibration(device, map);
+        return text(`Saved calibration for ${device} locally and on the trigger add-on.`);
+      } catch (err) {
+        return text(`Saved calibration for ${device} locally, but couldn't reach the trigger add-on: ${(err as Error).message}`);
+      }
+    } catch (err) {
+      return errorText(err);
+    }
+  }
 );
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -52,6 +52,20 @@ export function loadCoordinateMap(device: string): CoordinateMap {
     throw new Error(`No coordinate map for device "${device}" at ${path}. Run calibration or add a placeholder file there.`);
   }
   return JSON.parse(raw) as CoordinateMap;
+}
+
+/** Returns null if no coordinate map exists yet for this device, instead of throwing. */
+export function tryLoadCoordinateMap(device: string): CoordinateMap | null {
+  try {
+    return loadCoordinateMap(device);
+  } catch {
+    return null;
+  }
+}
+
+export function saveCoordinateMap(device: string, map: CoordinateMap): void {
+  mkdirSync(CALIBRATION_DIR, { recursive: true });
+  writeFileSync(join(CALIBRATION_DIR, `${device}.json`), JSON.stringify(map, null, 2));
 }
 
 function interpolate(waypoints: Waypoint[], index: number): { x: number; y: number } {

@@ -41,4 +41,10 @@ export const triggerServer = {
   removeWindow: (id: string) => call(`/schedule/windows/${encodeURIComponent(id)}`, { method: "DELETE" }),
   upsertOverride: (override: unknown) => call("/schedule/overrides", { method: "POST", body: JSON.stringify(override) }),
   removeOverride: (id: string) => call(`/schedule/overrides/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  listDevices: () => call("/devices", { method: "GET" }),
+  upsertDevice: (name: string, host: string) => call("/devices", { method: "POST", body: JSON.stringify({ name, host }) }),
+  removeDevice: (name: string) => call(`/devices/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  getCalibration: (device: string) => call(`/calibration/${encodeURIComponent(device)}`, { method: "GET" }),
+  setCalibration: (device: string, map: unknown) =>
+    call(`/calibration/${encodeURIComponent(device)}`, { method: "POST", body: JSON.stringify(map) }),
 };

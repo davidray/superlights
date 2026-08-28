@@ -17,6 +17,8 @@ import {
   type DefaultSchedule,
 } from "./holidaySchedule.js";
 import { startScheduler } from "./scheduler.js";
+import { listDevices, saveDevice, removeDevice } from "./devices.js";
+import { tryLoadCoordinateMap, saveCoordinateMap, type CoordinateMap } from "./coordinateMap.js";
 
 // A small always-on HTTP endpoint meant to run somewhere that's never asleep (the
 // same box as Home Assistant, via this add-on). Two jobs:
@@ -139,6 +141,28 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "DELETE" && url.pathname.startsWith("/schedule/overrides/")) {
       return send(res, 200, removeOverride(decodeURIComponent(url.pathname.slice("/schedule/overrides/".length))));
+    }
+
+    if (req.method === "GET" && url.pathname === "/devices") {
+      return send(res, 200, listDevices());
+    }
+    if (req.method === "POST" && url.pathname === "/devices") {
+      const body = await readJson<{ name: string; host: string }>(req);
+      return send(res, 200, saveDevice(body.name, body.host));
+    }
+    if (req.method === "DELETE" && url.pathname.startsWith("/devices/")) {
+      return send(res, 200, removeDevice(decodeURIComponent(url.pathname.slice("/devices/".length))));
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/calibration/")) {
+      const device = decodeURIComponent(url.pathname.slice("/calibration/".length));
+      return send(res, 200, tryLoadCoordinateMap(device));
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/calibration/")) {
+      const device = decodeURIComponent(url.pathname.slice("/calibration/".length));
+      const map = await readJson<CoordinateMap>(req);
+      saveCoordinateMap(device, map);
+      return send(res, 200, { ok: true, device });
     }
 
     return send(res, 404, { ok: false, error: "no such route" });

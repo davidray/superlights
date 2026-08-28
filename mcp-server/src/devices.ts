@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -33,4 +33,19 @@ export function resolveDevice(name: string): string {
     );
   }
   return host;
+}
+
+export function saveDevice(name: string, host: string): { name: string; host: string }[] {
+  const devices = { ...load(), [name]: host };
+  writeFileSync(CONFIG_PATH, JSON.stringify(devices, null, 2));
+  cache = null;
+  return listDevices();
+}
+
+export function removeDevice(name: string): { name: string; host: string }[] {
+  const devices = { ...load() };
+  delete devices[name];
+  writeFileSync(CONFIG_PATH, JSON.stringify(devices, null, 2));
+  cache = null;
+  return listDevices();
 }

@@ -1,6 +1,6 @@
-// Lets the local MCP server (what Claude talks to) manage the holiday schedule that
-// actually runs on the always-on trigger server (the HA add-on), over the network --
-// same /schedule/* routes triggerServer.ts exposes.
+// Lets the local MCP server (what Claude talks to) manage the holiday schedule,
+// devices, and calibration that actually live on the always-on trigger server (the
+// HA add-on), over the network -- same routes triggerServer.ts exposes.
 
 const BASE_URL = process.env.TRIGGER_SERVER_URL;
 const TOKEN = process.env.TRIGGER_SERVER_TOKEN;
@@ -9,7 +9,7 @@ function requireConfig(): { baseUrl: string; token: string } {
   if (!BASE_URL || !TOKEN) {
     throw new Error(
       "TRIGGER_SERVER_URL and TRIGGER_SERVER_TOKEN must be set (in mcp-server/.env) to manage the holiday schedule. " +
-        "TRIGGER_SERVER_URL is the Mac mini's address, e.g. http://192.168.214.242:8788 -- TRIGGER_SERVER_TOKEN is the same token configured on the trigger add-on."
+        "TRIGGER_SERVER_URL is the always-on host's address, e.g. http://192.168.1.50:8788 -- TRIGGER_SERVER_TOKEN is the same token configured on the trigger add-on."
     );
   }
   return { baseUrl: BASE_URL.replace(/\/+$/, ""), token: TOKEN };

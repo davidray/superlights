@@ -454,14 +454,25 @@ server.tool(
   }
 );
 
+const dateRule = z.union([
+  z.object({
+    type: z.literal("nthWeekday"),
+    month: z.number().int().min(1).max(12),
+    weekday: z.number().int().min(0).max(6).describe("0=Sunday...6=Saturday"),
+    n: z.number().int().describe("1=first, 2=second, 3=third, 4=fourth occurrence in the month, -1=last"),
+  }),
+  z.object({ type: z.literal("easter") }),
+]);
+
 server.tool(
   "add_override",
   "Add or update (by id) a one-off special-event override (birthday, anniversary, a specific game day) — highest priority, beats both holiday windows and the default schedule for its date.",
   {
     id: z.string().describe("Stable identifier. Reuse to update an existing override."),
     name: z.string(),
-    date: z.string().describe("'YYYY-MM-DD' for a specific one-time date, or 'MM-DD' if recurring is true"),
-    recurring: z.boolean().default(false).describe("true for an annual date like a birthday; false for a one-time date like a specific game"),
+    date: z.string().optional().describe("'YYYY-MM-DD' for a specific one-time date, or 'MM-DD' if recurring is true. Omit if using `rule` instead."),
+    recurring: z.boolean().default(false).describe("true for an annual date like a birthday; false for a one-time date like a specific game. Ignored if `rule` is set."),
+    rule: dateRule.optional().describe("For holidays that move every year: {type:'nthWeekday', month, weekday, n} for Thanksgiving/Memorial Day/Labor Day, or {type:'easter'}. Computed fresh for the current year; takes precedence over `date`."),
     onTime: timeValue,
     offTime: timeValue,
     device: z.string(),
@@ -470,7 +481,7 @@ server.tool(
   },
   async (override) => {
     try {
-      return text(await triggerServer.upsertOverride(override));
+      return text(await triggerServer.upsertOverride({ ...override, date: override.date ?? "" }));
     } catch (err) {
       return errorText(err);
     }

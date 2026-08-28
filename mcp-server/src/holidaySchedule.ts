@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { resolveTimeValue } from "./sunTimes.js";
+import { resolveDateRule, monthDayFromDate, type DateRule } from "./dateRules.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = process.env.WLED_HOLIDAY_SCHEDULE_CONFIG ?? join(__dirname, "..", "holidaySchedule.json");
@@ -33,9 +34,14 @@ export interface HolidayWindow {
 export interface Override {
   id: string;
   name: string;
-  /** YYYY-MM-DD for a one-time date, or MM-DD if recurring is true */
+  /**
+   * YYYY-MM-DD for a one-time date, or MM-DD if recurring is true. Ignored if `rule`
+   * is set -- `rule` takes precedence for holidays that move every year (Thanksgiving,
+   * Memorial Day, Labor Day, Easter), computed fresh for the current year each time.
+   */
   date: string;
   recurring: boolean;
+  rule?: DateRule;
   onTime: TimeValue;
   offTime: TimeValue;
   device: string;
@@ -158,6 +164,7 @@ export function evaluateSchedule(now: Date, config: HolidayScheduleConfig): Acti
 
   const activeOverride = config.overrides.find((o) => {
     if (!o.enabled) return false;
+    if (o.rule) return monthDayFromDate(resolveDateRule(o.rule, now.getFullYear())) === today;
     return o.recurring ? o.date === today : o.date === todayIso;
   });
   if (activeOverride) {

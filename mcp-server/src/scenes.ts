@@ -118,7 +118,7 @@ export const scenes: Scene[] = [
   {
     id: "patriotic-wave",
     name: "Patriotic Wave",
-    description: "Red, white, and blue bands sweeping across the house — for July 4th and Veterans Day.",
+    description: "Red, white, and blue bands sweeping across the house — for July 4th, Veterans Day, Memorial Day, and Labor Day.",
     render: (ctx, t) => {
       const phase = ctx.x * 3 - t * 0.4;
       const p = ((phase % 1) + 1) % 1;
@@ -135,6 +135,26 @@ export const scenes: Scene[] = [
       const frame = Math.floor(t * 10);
       if (hash(ctx.deviceIndex, frame) < 0.08) return [0, 0, 0];
       return hash(ctx.deviceIndex, Math.floor(t * 0.5)) > 0.5 ? [255, 100, 0] : [110, 20, 160];
+    },
+  },
+  {
+    id: "autumn-harvest",
+    name: "Autumn Harvest",
+    description: "Warm oranges, browns, and gold drifting across the house — for Thanksgiving.",
+    render: (ctx, t) => {
+      const phase = ctx.x * 2.5 - t * 0.3;
+      const hue = (25 + 20 * Math.sin(phase * Math.PI * 2)) / 360;
+      return hslToRgb(hue, 0.75, 0.4);
+    },
+  },
+  {
+    id: "easter-pastels",
+    name: "Easter Pastels",
+    description: "Soft pastel pink, lavender, and mint drifting across the house — for Easter.",
+    render: (ctx, t) => {
+      const phase = ctx.x * 3 - t * 0.35;
+      const hue = (300 + 120 * ((Math.sin(phase * Math.PI * 2) + 1) / 2)) % 360 / 360;
+      return hslToRgb(hue, 0.55, 0.7);
     },
   },
 ];

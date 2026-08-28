@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "description": "MCP server for designing and controlling WLED lighting scenes",
   "license": "MIT",
+  "author": "David Christiansen",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/davidray/superlights.git",
+    "directory": "mcp-server"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "type": "module",
   "main": "dist/index.js",
   "bin": {

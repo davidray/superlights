@@ -112,3 +112,28 @@ test("timeInRange handles a range that crosses midnight", () => {
   assert.equal(timeInRange(now(1, 0), "22:00", "02:00"), true);
   assert.equal(timeInRange(now(10, 0), "22:00", "02:00"), false);
 });
+
+// Regression coverage for the scheduler bug (#6): evaluateSchedule can hand the
+// winning rule off from one device to a completely different one between two
+// consecutive evaluations -- e.g. an override that targets a different device than
+// the default schedule becoming active partway through the day. scheduler.ts's
+// tick() relies on comparing `rule.device` across ticks to know when it must
+// explicitly turn off the previously-active device (evaluateSchedule itself has no
+// notion of "previous" state, so it can't do this on its own -- it just reports
+// whichever single rule wins "right now").
+test("the winning rule's device can change between two evaluations, not just its scene", () => {
+  const c = config({
+    defaultSchedule: { onTime: "08:00", offTime: "22:00", device: "eaves", scene: "default-scene", enabled: true },
+    windows: [],
+    overrides: [
+      { id: "porch-event", name: "Porch Event", date: "07-04", recurring: true, onTime: "08:00", offTime: "22:00", device: "porch", scene: "fireworks", enabled: true },
+    ],
+  });
+
+  const before = evaluateSchedule(new Date("2026-07-03T12:00:00"), c);
+  assert.equal(before?.device, "eaves");
+
+  const after = evaluateSchedule(new Date("2026-07-04T12:00:00"), c);
+  assert.equal(after?.device, "porch");
+  assert.notEqual(before?.device, after?.device);
+});

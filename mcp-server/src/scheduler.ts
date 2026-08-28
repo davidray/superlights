@@ -46,6 +46,16 @@ async function tick(): Promise<void> {
     lastApplied?.ruleId === rule.id && lastApplied?.device === rule.device && lastApplied?.on === shouldBeOn;
   if (alreadyCorrect) return;
 
+  // Invariant: at most one device is ever left "on" as a result of this scheduler.
+  // The winning rule can hand off to a different device between ticks (e.g. an
+  // override on device B preempts a default schedule that was running on device A),
+  // and applyOn(rule.device, ...) below only ever touches the NEW device -- it never
+  // implicitly turns the old one off. So if the device changed and the old one was
+  // on, explicitly turn it off first, before applying whatever the new rule wants.
+  if (lastApplied?.on && lastApplied.device !== rule.device) {
+    await applyOff(lastApplied.device);
+  }
+
   if (shouldBeOn) {
     console.error(`[scheduler] applying "${rule.name}" (${rule.source}) -> scene "${rule.scene}" on ${rule.device}`);
     await applyOn(rule.device, rule.scene);

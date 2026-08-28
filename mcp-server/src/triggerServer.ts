@@ -2,6 +2,7 @@ import "./loadEnv.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import * as actions from "./actions.js";
 import { playSceneLive, stopStream } from "./liveStreamController.js";
+import type { SceneSpec } from "./sceneSpec.js";
 import {
   loadConfig,
   upsertWindow,
@@ -81,7 +82,7 @@ async function handleTrigger(body: TriggerBody): Promise<unknown> {
       return { ok: true, appliedEffect: result.effectName };
     }
     case "scene": {
-      const result = await playSceneLive(device, body.scene as string, {
+      const result = await playSceneLive(device, body.scene as string | SceneSpec, {
         durationSeconds: body.durationSeconds as number | undefined,
         fps: body.fps as number | undefined,
       });

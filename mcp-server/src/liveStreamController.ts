@@ -2,6 +2,7 @@ import { DdpSender } from "./ddp.js";
 import { resolveDevice } from "./devices.js";
 import { loadCoordinateMap, allLedPositions } from "./coordinateMap.js";
 import { findScene, type Scene } from "./scenes.js";
+import { buildSceneFromSpec, type SceneSpec } from "./sceneSpec.js";
 
 interface LiveStream {
   timer: ReturnType<typeof setInterval>;
@@ -38,9 +39,15 @@ export interface PlaySceneResult {
  * runs start immediately and keep streaming in the background — call stopStream
  * to cancel those.
  */
-export async function playSceneLive(device: string, sceneId: string, opts: PlaySceneOptions = {}): Promise<PlaySceneResult> {
-  const scene = findScene(sceneId);
-  if (!scene) throw new Error(`Unknown scene "${sceneId}".`);
+export async function playSceneLive(device: string, sceneOrSpec: string | SceneSpec, opts: PlaySceneOptions = {}): Promise<PlaySceneResult> {
+  let scene: Scene;
+  if (typeof sceneOrSpec === "string") {
+    const found = findScene(sceneOrSpec);
+    if (!found) throw new Error(`Unknown scene "${sceneOrSpec}".`);
+    scene = found;
+  } else {
+    scene = buildSceneFromSpec(sceneOrSpec);
+  }
 
   const host = resolveDevice(device);
   const map = loadCoordinateMap(device);

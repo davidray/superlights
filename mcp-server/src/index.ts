@@ -330,18 +330,33 @@ server.tool(
   async () => text(scenes.map(({ id, name, description }) => ({ id, name, description })))
 );
 
+const rgbChannel = z.number().int().min(0).max(255);
+const sceneSpec = z.object({
+  name: z.string().optional().describe("Human-readable label for status messages, e.g. 'Date Night'"),
+  palette: z.array(z.tuple([rgbChannel, rgbChannel, rgbChannel])).min(1).max(8).describe("1-8 colors as [r,g,b] triples"),
+  pattern: z.enum(["solid", "wave", "chase", "twinkle", "pulse", "gradientDrift"]).describe(
+    "solid=static color; wave/gradientDrift=smooth drift through the palette (gradientDrift is slower, single-sweep); chase=hard-edged bands cycling through the palette; twinkle=random sparkle over a dim background; pulse=whole-house brightness breathing over a slowly-cycling base color"
+  ),
+  speed: z.number().positive().optional().describe("Tempo multiplier, default 1"),
+  bandWidth: z.number().positive().optional().describe("Fraction of the house per repeating band, for wave/chase — smaller means more bands"),
+  direction: z.union([z.literal(1), z.literal(-1)]).optional(),
+  sparkleDensity: z.number().min(0).max(1).optional().describe("Fraction of LEDs lit at once, for twinkle. Default 0.12"),
+  brightnessMin: z.number().min(0).max(1).optional().describe("Brightness floor for twinkle's background / pulse's breathing range"),
+  brightnessMax: z.number().min(0).max(1).optional().describe("Brightness ceiling for pulse's breathing range"),
+});
+
 server.tool(
   "play_scene_live",
-  "Stream a custom scene to real WLED hardware in realtime over DDP, bypassing WLED's own effect engine so the scene can use physical LED position. Requires a coordinate map for the device (calibration/<device>.json). Calls of 20s or less finish before returning; longer or open-ended runs start in the background — use stop_live to cancel those.",
+  "Stream a scene to real WLED hardware in realtime over DDP, bypassing WLED's own effect engine so the scene can use physical LED position. Requires a coordinate map for the device (calibration/<device>.json). Pass either a scene id from list_scenes, or an inline spec (palette + pattern) to compose a one-off scene on the fly — e.g. for a spontaneous request like 'a romantic scene in these colors' — with no code change or release needed. Calls of 20s or less finish before returning; longer or open-ended runs start in the background — use stop_live to cancel those.",
   {
     device: z.string(),
-    scene: z.string().describe("Scene id from list_scenes"),
+    scene: z.union([z.string().describe("Scene id from list_scenes"), sceneSpec]).describe("A registered scene id, or an inline scene spec"),
     durationSeconds: z.number().positive().optional().describe("Omit to run until stop_live is called"),
     fps: z.number().int().min(1).max(60).default(30),
   },
-  async ({ device, scene: sceneId, durationSeconds, fps }) => {
+  async ({ device, scene, durationSeconds, fps }) => {
     try {
-      const result = await playSceneLive(device, sceneId, { durationSeconds, fps });
+      const result = await playSceneLive(device, scene, { durationSeconds, fps });
       if (!result.backgrounded) {
         return text(`Played "${result.scene.name}" on ${device} for ${durationSeconds}s.`);
       }

@@ -28,7 +28,7 @@ function hslToRgb(h: number, s: number, l: number): RGB {
 }
 
 /** Deterministic pseudo-random in [0,1) from two numbers, for stable-looking sparkle without shared state. */
-function hash(a: number, b: number): number {
+export function hash(a: number, b: number): number {
   const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
   return s - Math.floor(s);
 }

@@ -84,9 +84,13 @@ A pattern that's worked well building this:
   approach referencing the conventions above, and waits for approval before
   touching anything.
 - Once a plan's approved, it's reasonable to let it drive the whole loop
-  autonomously — implement, build, verify, bump the version if needed,
-  commit, and push — checking in mainly before the push itself, or before
-  anything that touches the live add-on or real hardware directly. ("Set
-  this up and drive it" works as a prompt for exactly that.)
+  autonomously — implement, build, verify, bump the version if needed —
+  checking in mainly before anything that touches the live add-on or real
+  hardware directly. ("Set this up and drive it" works as a prompt for
+  exactly that.)
+- Changes go through a branch + PR, not straight to `main` — CI runs on
+  every PR, and it gives a review point before anything merges. Merging
+  itself is a call for a person to make, not something to do
+  automatically once CI is green.
 - Point it at this file and the README at the start of a session — both
   describe the actual conventions in use, not aspirational ones.

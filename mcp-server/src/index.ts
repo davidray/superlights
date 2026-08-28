@@ -26,6 +26,40 @@ function errorText(err: unknown) {
 }
 
 // ---------------------------------------------------------------------------
+// Setup
+
+server.registerPrompt(
+  "setup",
+  {
+    title: "Set up Superlights",
+    description: "Walk through connecting a new WLED device: registering it, calibrating its physical layout, and configuring the schedule.",
+  },
+  async () => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: `Help me get a WLED device set up with this MCP server. Work through this checklist conversationally, one step at a time -- check real state with tools rather than assuming, and don't ask for information you can discover yourself.
+
+1. **Device**: call list_devices. If nothing is configured, or a host is still a "REPLACE_WITH..." placeholder, ask me for a name and the device's IP/hostname (I should have already flashed it with WLED -- if not, point me to https://kno.wled.ge/basics/getting-started/ first), then call add_device. Confirm it responds with get_device_state.
+
+2. **Calibration**: call get_calibration for the device. If it returns null, explain that custom scenes (list_scenes / play_scene_live) render against each LED's real physical position, described as one or more "runs" (physical sections, e.g. a roofline) with a few hand-placed x/y waypoints, linearly interpolated between them -- and that approximate is fine to start (see mcp-server/calibration/eaves.json for a real, admittedly-approximate example). Offer to flash a striped test pattern via set_raw_state's per-LED "i" field so I can physically count LEDs per run, then ask me to roughly describe or photograph the layout so you can estimate waypoints, and save the result with set_calibration.
+
+   Important gotcha to mention if LED counts ever come up: WLED itself has its own configured total LED count and segment boundaries (visible via get_device_state), separate from this coordinate map -- both need to match and stay in sync, or some LEDs will silently never receive frames.
+
+3. **Schedule**: call list_schedule. If location is unset, ask for my latitude/longitude (or a city to estimate from) and call set_schedule_location. If there's no default schedule, ask what the lights should do on a normal day (e.g. "on at dusk, off at 10:15pm", which scene) and call set_default_schedule.
+
+4. Once the basics work, mention (don't necessarily set up yet) that holiday windows, one-off overrides (birthdays, events), and ad-hoc scene specs (an inline palette + pattern for play_scene_live, for one-off requests like "a romantic scene in these colors" with no code change needed) are also available whenever I want them.
+
+Start by checking current state (list_devices, get_calibration, list_schedule) before asking me anything.`,
+        },
+      },
+    ],
+  })
+);
+
+// ---------------------------------------------------------------------------
 // Discovery
 
 server.tool("list_devices", "List the WLED devices configured in devices.json, by name.", {}, async () => {

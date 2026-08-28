@@ -2,6 +2,8 @@
 // devices, and calibration that actually live on the always-on trigger server (the
 // HA add-on), over the network -- same routes triggerServer.ts exposes.
 
+import { httpFetch } from "./httpFetch.js";
+
 const BASE_URL = process.env.TRIGGER_SERVER_URL;
 const TOKEN = process.env.TRIGGER_SERVER_TOKEN;
 
@@ -17,20 +19,19 @@ function requireConfig(): { baseUrl: string; token: string } {
 
 async function call(path: string, init: RequestInit = {}): Promise<unknown> {
   const { baseUrl, token } = requireConfig();
-  let res: Response;
-  try {
-    res = await fetch(`${baseUrl}${path}`, {
+  return httpFetch({
+    url: `${baseUrl}${path}`,
+    init: {
       ...init,
       headers: { ...init.headers, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    throw new Error(`Could not reach the trigger server at ${baseUrl} (${(err as Error).message})`);
-  }
-  const body = await res.json().catch(() => undefined);
-  if (!res.ok) {
-    throw new Error(`Trigger server returned HTTP ${res.status} for ${path}: ${JSON.stringify(body)}`);
-  }
-  return body;
+    },
+    onNetworkError: (err) => new Error(`Could not reach the trigger server at ${baseUrl} (${(err as Error).message})`),
+    onHttpError: async (res) => {
+      const body = await res.json().catch(() => undefined);
+      return new Error(`Trigger server returned HTTP ${res.status} for ${path}: ${JSON.stringify(body)}`);
+    },
+    parseBody: (res) => res.json(),
+  });
 }
 
 export const triggerServer = {
@@ -41,10 +42,8 @@ export const triggerServer = {
   removeWindow: (id: string) => call(`/schedule/windows/${encodeURIComponent(id)}`, { method: "DELETE" }),
   upsertOverride: (override: unknown) => call("/schedule/overrides", { method: "POST", body: JSON.stringify(override) }),
   removeOverride: (id: string) => call(`/schedule/overrides/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  listDevices: () => call("/devices", { method: "GET" }),
   upsertDevice: (name: string, host: string) => call("/devices", { method: "POST", body: JSON.stringify({ name, host }) }),
   removeDevice: (name: string) => call(`/devices/${encodeURIComponent(name)}`, { method: "DELETE" }),
-  getCalibration: (device: string) => call(`/calibration/${encodeURIComponent(device)}`, { method: "GET" }),
   setCalibration: (device: string, map: unknown) =>
     call(`/calibration/${encodeURIComponent(device)}`, { method: "POST", body: JSON.stringify(map) }),
 };

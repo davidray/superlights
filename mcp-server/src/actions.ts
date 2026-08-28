@@ -1,7 +1,7 @@
 import { WledClient, findByName, type WledSegment } from "./wledClient.js";
 import { resolveDevice } from "./devices.js";
 
-function clientFor(device: string): WledClient {
+export function clientFor(device: string): WledClient {
   return new WledClient(resolveDevice(device));
 }
 
@@ -36,14 +36,26 @@ export interface RunEffectResult {
  *  MCP set_effect tool and the Home Assistant trigger server. */
 export async function runEffect(device: string, effect: string | number, opts: RunEffectOptions = {}): Promise<RunEffectResult> {
   const client = clientFor(device);
-  const effects = await client.getEffects();
-  const fxId = typeof effect === "number" ? effect : findByName(effects, effect);
-  if (fxId === undefined) throw new Error(`No effect matching "${effect}". Call list_effects first.`);
+  const needsPalette = opts.palette !== undefined;
+  // Independent HTTP calls -- fire both up front instead of waiting on effects before
+  // even starting the palette lookup.
+  const [effects, palettes] = await Promise.all([client.getEffects(), needsPalette ? client.getPalettes() : Promise.resolve(undefined)]);
+
+  let fxId: number;
+  if (typeof effect === "number") {
+    if (!Number.isInteger(effect) || effect < 0 || effect >= effects.length) {
+      throw new Error(`Effect id ${effect} is out of range (must be 0-${effects.length - 1}). Call list_effects first.`);
+    }
+    fxId = effect;
+  } else {
+    const found = findByName(effects, effect);
+    if (found === undefined) throw new Error(`No effect matching "${effect}". Call list_effects first.`);
+    fxId = found;
+  }
 
   let palId: number | undefined;
   if (opts.palette !== undefined) {
-    const palettes = await client.getPalettes();
-    palId = typeof opts.palette === "number" ? opts.palette : findByName(palettes, opts.palette);
+    palId = typeof opts.palette === "number" ? opts.palette : findByName(palettes!, opts.palette);
     if (palId === undefined) throw new Error(`No palette matching "${opts.palette}". Call list_palettes first.`);
   }
 

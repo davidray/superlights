@@ -116,13 +116,22 @@ fresh each evaluation from the configured `latitude`/`longitude`
 ## Scenes
 
 `list_scenes` shows the built-in library (spatially-aware, coded against the
-coordinate map). `play_scene_live` runs one by `id` — or, instead of an `id`,
-you can pass an inline **scene spec**: a color palette plus a pattern
-(`solid`, `wave`, `chase`, `twinkle`, `pulse`, `gradientDrift`) with a few
-tunable knobs. This lets you compose a one-off scene from a plain-language
-request ("a romantic scene in these colors") with no code change and no
-add-on release — it's interpreted live against the same rendering pipeline as
-the built-in scenes.
+coordinate map). `play_scene_live` runs one by `id` on real hardware.
+
+### Impromptu scenes
+
+`play_scene_live` also accepts an inline **scene spec** instead of an `id` —
+a color palette plus a pattern (`solid`, `wave`, `chase`, `twinkle`, `pulse`,
+`gradientDrift`) with a few tunable knobs. That means a spontaneous, one-off
+request can just be asked for in plain language and run immediately, with no
+code change and no add-on release:
+
+> "It's date night — do something fun and romantic in aqua and mauve."
+
+Claude composes the palette/pattern spec and streams it live, interpreted
+against the same rendering pipeline as the built-in scenes. Ask for it to
+keep running ("...for the rest of the night") or for a fixed duration; either
+way, `stop_live` cancels it.
 
 ## Security note
 

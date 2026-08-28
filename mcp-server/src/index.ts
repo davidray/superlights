@@ -398,7 +398,7 @@ server.tool(
 
 server.tool(
   "list_scenes",
-  "List custom spatially-aware scenes (distinct from WLED's built-in effects — these are authored as code against the device's coordinate map, so they can react to each LED's real physical x/y position). To preview one visually, use the Mac Simulator app. To run one on real hardware, use play_scene_live.",
+  "List custom spatially-aware scenes (distinct from WLED's built-in effects — these are authored as code against the device's coordinate map, so they can react to each LED's real physical x/y position). Use play_scene_live to run one on real hardware.",
   {},
   async () => text(scenes.map(({ id, name, description }) => ({ id, name, description })))
 );

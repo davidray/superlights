@@ -141,6 +141,11 @@ on your LAN; don't port-forward it to the internet without adding your own
 layer in front (a reverse proxy, VPN, etc.) — the bearer-token auth alone
 isn't hardened for public exposure.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture conventions, the
+deploy loop, and notes on using Claude Code to work on this repo.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

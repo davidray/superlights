@@ -2,7 +2,7 @@
   "device": "eaves",
   "capturedAt": "counts confirmed via live Scan-effect physical count on 2026-08-27; positions still hand-traced from reference photos, not measured",
   "placeholder": true,
-  "note": "LED counts (39 + 159) are real, confirmed by counting a physical 4-red/4-white striped pattern on the actual installed strips. The x/y positions along each run are still an approximate multi-gable shape traced by eye from photos, not a real flash-and-photograph calibration -- good enough to preview scenes, not accurate per-LED placement yet.",
+  "note": "LED counts (43 + 159) are real, confirmed by counting a physical 4-red/4-white striped pattern on the actual installed strips. Lower-roofline was recounted twice on 2026-08-27 (39 -> 42 -> 43) after LEDs at the tail end were found stuck on the original test pattern's red, meaning they'd been outside the addressed range. The x/y positions along each run are still an approximate multi-gable shape traced by eye from photos, not a real flash-and-photograph calibration -- good enough to preview scenes, not accurate per-LED placement yet. The 4 newly-added lower-roofline LEDs (39-42) have no waypoint of their own yet, so they clamp to the last known corner position (0.52, 0.28) until re-traced.",
   "imageWidth": 1,
   "imageHeight": 1,
   "runs": [
@@ -10,7 +10,7 @@
       "id": "lower-roofline",
       "segment": 0,
       "startIndex": 0,
-      "endIndex": 38,
+      "endIndex": 42,
       "deviceOffset": 0,
       "waypoints": [
         { "index": 0, "x": 0.06, "y": 0.44 },
@@ -27,7 +27,7 @@
       "segment": 1,
       "startIndex": 0,
       "endIndex": 158,
-      "deviceOffset": 39,
+      "deviceOffset": 43,
       "waypoints": [
         { "index": 0, "x": 0.52, "y": 0.28 },
         { "index": 21, "x": 0.58, "y": 0.35 },

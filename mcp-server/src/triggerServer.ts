@@ -1,7 +1,7 @@
 import "./loadEnv.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import * as actions from "./actions.js";
-import { playSceneLive, stopStream } from "./liveStreamController.js";
+import { playSceneLive, stopStream, isStreaming } from "./liveStreamController.js";
 import type { SceneSpec } from "./sceneSpec.js";
 import {
   loadConfig,
@@ -152,6 +152,11 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "DELETE" && url.pathname.startsWith("/devices/")) {
       return send(res, 200, removeDevice(decodeURIComponent(url.pathname.slice("/devices/".length))));
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/streams/")) {
+      const device = decodeURIComponent(url.pathname.slice("/streams/".length));
+      return send(res, 200, { device, active: isStreaming(device) });
     }
 
     if (req.method === "GET" && url.pathname.startsWith("/calibration/")) {

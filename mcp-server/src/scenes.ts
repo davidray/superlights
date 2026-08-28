@@ -84,6 +84,59 @@ export const scenes: Scene[] = [
       return hslToRgb(hue, 0.9, 0.55);
     },
   },
+  {
+    id: "new-years-sparkle",
+    name: "New Year's Sparkle",
+    description: "Bright gold and white twinkle over a dim warm base — countdown energy for New Year's Eve.",
+    render: (ctx, t) => {
+      const frame = Math.floor(t * 7);
+      const twinkle = hash(ctx.deviceIndex, frame);
+      if (twinkle <= 0.7) return [40, 30, 10];
+      return hash(ctx.deviceIndex, frame + 500) > 0.5 ? [255, 215, 90] : [255, 255, 240];
+    },
+  },
+  {
+    id: "valentines-glow",
+    name: "Valentine's Glow",
+    description: "Soft pulsing red and pink across the house.",
+    render: (ctx, t) => {
+      const pulse = (Math.sin(t * 1.2 + ctx.x * 2) + 1) / 2;
+      const hue = (340 + ctx.x * 10) / 360;
+      return hslToRgb(hue, 0.75, 0.35 + pulse * 0.25);
+    },
+  },
+  {
+    id: "st-patricks-shimmer",
+    name: "St. Patrick's Shimmer",
+    description: "Shades of green shimmering across the house.",
+    render: (ctx, t) => {
+      const phase = ctx.x * 3 - t * 0.5;
+      const hue = (100 + 30 * Math.sin(phase * Math.PI * 2)) / 360;
+      return hslToRgb(hue, 0.7, 0.45);
+    },
+  },
+  {
+    id: "patriotic-wave",
+    name: "Patriotic Wave",
+    description: "Red, white, and blue bands sweeping across the house — for July 4th and Veterans Day.",
+    render: (ctx, t) => {
+      const phase = ctx.x * 3 - t * 0.4;
+      const p = ((phase % 1) + 1) % 1;
+      if (p < 0.33) return [190, 20, 30];
+      if (p < 0.66) return [245, 245, 245];
+      return [20, 40, 140];
+    },
+  },
+  {
+    id: "halloween-flicker",
+    name: "Halloween Flicker",
+    description: "Flickering orange and purple with occasional dark pulses — spooky for Halloween season.",
+    render: (ctx, t) => {
+      const frame = Math.floor(t * 10);
+      if (hash(ctx.deviceIndex, frame) < 0.08) return [0, 0, 0];
+      return hash(ctx.deviceIndex, Math.floor(t * 0.5)) > 0.5 ? [255, 100, 0] : [110, 20, 160];
+    },
+  },
 ];
 
 export function findScene(id: string): Scene | undefined {

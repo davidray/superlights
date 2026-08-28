@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluateSchedule, timeInRange, type HolidayScheduleConfig } from "./holidaySchedule.js";
+import {
+  evaluateSchedule,
+  timeInRange,
+  setLocation,
+  setDefaultSchedule,
+  upsertWindow,
+  upsertOverride,
+  type HolidayScheduleConfig,
+} from "./holidaySchedule.js";
 
 function config(partial: Partial<HolidayScheduleConfig> = {}): HolidayScheduleConfig {
   return {
@@ -111,4 +119,99 @@ test("timeInRange handles a range that crosses midnight", () => {
   assert.equal(timeInRange(now(23, 30), "22:00", "02:00"), true);
   assert.equal(timeInRange(now(1, 0), "22:00", "02:00"), true);
   assert.equal(timeInRange(now(10, 0), "22:00", "02:00"), false);
+});
+
+// --- Input validation on the write functions (issue #5: the trigger-server's HTTP
+// routes call these directly with raw JSON bodies, bypassing index.ts's zod schemas --
+// so these functions need to reject malformed data themselves, regardless of caller.
+// These only exercise the validation (which throws before any config file I/O), so
+// they don't touch disk.
+
+test("setLocation rejects an out-of-range latitude/longitude", () => {
+  assert.throws(() => setLocation({ latitude: 200, longitude: 0 }), /latitude/);
+  assert.throws(() => setLocation({ latitude: 0, longitude: -200 }), /longitude/);
+});
+
+test("setDefaultSchedule rejects a malformed onTime/offTime", () => {
+  assert.throws(
+    () => setDefaultSchedule({ onTime: "not-a-time", offTime: "22:00", device: "eaves", scene: "s", enabled: true }),
+    /onTime/
+  );
+  assert.throws(
+    () => setDefaultSchedule({ onTime: "08:00", offTime: "22:00", device: "", scene: "s", enabled: true }),
+    /device/
+  );
+});
+
+test("upsertWindow rejects a malformed seasonStart/seasonEnd", () => {
+  assert.throws(
+    () =>
+      upsertWindow({
+        id: "w",
+        name: "W",
+        seasonStart: "November 20",
+        seasonEnd: "01-05",
+        onTime: "08:00",
+        offTime: "22:00",
+        device: "eaves",
+        scene: "s",
+        enabled: true,
+      }),
+    /seasonStart/
+  );
+});
+
+test("upsertOverride rejects a malformed date-rule shape", () => {
+  assert.throws(
+    () =>
+      upsertOverride({
+        id: "bad-rule",
+        name: "Bad Rule",
+        date: "",
+        recurring: false,
+        rule: { type: "nthWeekday", month: 13, weekday: 4, n: 4 },
+        onTime: "08:00",
+        offTime: "22:00",
+        device: "eaves",
+        scene: "s",
+        enabled: true,
+      }),
+    /rule\.month/
+  );
+});
+
+test("upsertOverride rejects a one-time override whose date isn't YYYY-MM-DD", () => {
+  assert.throws(
+    () =>
+      upsertOverride({
+        id: "bad-date",
+        name: "Bad Date",
+        date: "09/05/2026",
+        recurring: false,
+        onTime: "08:00",
+        offTime: "22:00",
+        device: "eaves",
+        scene: "s",
+        enabled: true,
+      }),
+    /date/
+  );
+});
+
+test("upsertOverride rejects a recurring override whose date isn't MM-DD", () => {
+  assert.throws(
+    () =>
+      upsertOverride({
+        id: "bad-recurring-date",
+        name: "Bad Recurring Date",
+        date: "2026-05-08",
+        recurring: true,
+        onTime: "08:00",
+        offTime: "22:00",
+        device: "eaves",
+        scene: "s",
+        enabled: true,
+      }),
+    /date/
+  );
 });

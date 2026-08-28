@@ -68,6 +68,7 @@ Start by checking current state (list_devices, get_calibration, list_schedule) b
 server.registerTool(
   "list_devices",
   {
+    annotations: { readOnlyHint: true },
     description: "List the WLED devices configured in devices.json, by name.",
     outputSchema: { devices: z.array(z.object({ name: z.string(), host: z.string() })) },
   },
@@ -100,6 +101,7 @@ const deviceSegmentState = z.object({
 server.registerTool(
   "get_device_state",
   {
+    annotations: { readOnlyHint: true },
     description:
       "Get a WLED device's current power, brightness, and per-segment state (effect/palette/colors resolved to readable names), plus basic device info (LED count, segment count, firmware version).",
     inputSchema: { device: z.string().describe("Device name, from list_devices") },
@@ -162,6 +164,7 @@ const deviceWriteOutputSchema = {
 server.registerTool(
   "add_device",
   {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     description:
       "Register a WLED device by name and IP/hostname. Writes both the local devices.json (used by this MCP server for direct control) and the trigger add-on's copy (used for scheduling), if TRIGGER_SERVER_URL/TOKEN are configured -- a device generally needs to be registered in both places to work end-to-end.",
     inputSchema: { name: z.string(), host: z.string().describe("IP address or hostname, e.g. 192.168.1.50") },
@@ -185,6 +188,7 @@ server.registerTool(
 server.registerTool(
   "remove_device",
   {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     description: "Remove a WLED device by name from both the local devices.json and the trigger add-on's copy, if configured.",
     inputSchema: { name: z.string() },
     outputSchema: deviceWriteOutputSchema,
@@ -210,6 +214,7 @@ server.registerTool(
 server.registerTool(
   "list_effects",
   {
+    annotations: { readOnlyHint: true },
     description: "List all effects available on a WLED device, with their numeric IDs (needed for set_segment) and names.",
     inputSchema: { device: z.string() },
     outputSchema: { effects: z.array(z.object({ id: z.number(), name: z.string() })) },
@@ -227,6 +232,7 @@ server.registerTool(
 server.registerTool(
   "list_palettes",
   {
+    annotations: { readOnlyHint: true },
     description: "List all color palettes available on a WLED device, with their numeric IDs and names.",
     inputSchema: { device: z.string() },
     outputSchema: { palettes: z.array(z.object({ id: z.number(), name: z.string() })) },
@@ -244,6 +250,7 @@ server.registerTool(
 server.registerTool(
   "get_effect_info",
   {
+    annotations: { readOnlyHint: true },
     description:
       "Get the tunable parameters for a specific effect (speed/intensity/custom slider labels, whether it uses a palette, whether it's 1D/2D/audio-reactive). Useful before calling set_segment with fx/sx/ix/c1/c2/c3 so the values you pick actually mean something for that effect.",
     inputSchema: { device: z.string(), effect: z.union([z.string(), z.number()]).describe("Effect name or numeric ID") },
@@ -281,6 +288,7 @@ const ok = { ok: z.literal(true) };
 server.registerTool(
   "set_power",
   {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     description: "Turn a WLED device on, off, or toggle it.",
     inputSchema: { device: z.string(), on: z.union([z.boolean(), z.literal("toggle")]) },
     outputSchema: ok,
@@ -298,6 +306,7 @@ server.registerTool(
 server.registerTool(
   "set_brightness",
   {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     description: "Set overall brightness for a WLED device.",
     inputSchema: { device: z.string(), brightness: z.number().int().min(1).max(255) },
     outputSchema: ok,
@@ -320,6 +329,7 @@ const hexColor = z.string().regex(/^#?[0-9a-fA-F]{6}$/, "expected a hex color li
 server.registerTool(
   "set_effect",
   {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     description:
       "Apply an effect (by name or ID) with speed/intensity/palette/colors to a device. This is the main tool for designing a lighting scene. Omit `segment` to apply to all currently-selected segments; pass a segment id to target just one zone. Use list_effects/list_palettes to see valid names, and get_effect_info to see what speed/intensity/custom sliders actually do for a given effect.",
     inputSchema: {
@@ -355,6 +365,7 @@ server.registerTool(
 server.registerTool(
   "set_segment",
   {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     description:
       "Directly set any WLED segment fields (advanced/raw control) — e.g. start/stop bounds, grouping/spacing, mirror/reverse, name, per-LED colors. For simple 'apply this effect' use set_effect instead.",
     inputSchema: {
@@ -384,6 +395,7 @@ const presetEntry = z.union([z.null(), z.object({ n: z.string().optional(), ql: 
 server.registerTool(
   "list_presets",
   {
+    annotations: { readOnlyHint: true },
     description: "List saved presets (scenes) on a device.",
     inputSchema: { device: z.string() },
     outputSchema: { presets: z.record(z.string(), presetEntry).describe("Keyed by preset slot number, as a string") },
@@ -400,6 +412,7 @@ server.registerTool(
 server.registerTool(
   "save_preset",
   {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     description:
       "Save the device's current live state as a named preset (scene) in slot 1-250. Design the scene first with set_effect/set_segment/set_brightness, then call this to save it.",
     inputSchema: {
@@ -431,6 +444,7 @@ server.registerTool(
 server.registerTool(
   "apply_preset",
   {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     description: "Activate a saved preset (scene) on a device.",
     inputSchema: { device: z.string(), slot: z.number().int().min(1).max(250), transitionMs: z.number().int().min(0).optional() },
     outputSchema: ok,
@@ -448,6 +462,7 @@ server.registerTool(
 server.registerTool(
   "delete_preset",
   {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     description: "Delete a saved preset from a device.",
     inputSchema: { device: z.string(), slot: z.number().int().min(1).max(250) },
     outputSchema: ok,
@@ -468,6 +483,7 @@ server.registerTool(
 server.registerTool(
   "set_playlist",
   {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     description:
       "Play a sequence of saved presets in order, each for a given duration — e.g. cycling through several holiday scenes. Presets must already exist (see save_preset).",
     inputSchema: {
@@ -505,6 +521,7 @@ server.registerTool(
 server.registerTool(
   "set_raw_state",
   {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     description:
       "Send a raw JSON object directly to WLED's /json/state endpoint, for anything not covered by the other tools (nightlight, UDP sync, individual per-LED colors via the `i` segment field, etc). Refer to the WLED JSON API docs for the full schema.",
     inputSchema: { device: z.string(), state: z.record(z.string(), z.unknown()) },
@@ -532,6 +549,7 @@ server.registerTool(
 server.registerTool(
   "list_scenes",
   {
+    annotations: { readOnlyHint: true },
     description:
       "List custom spatially-aware scenes (distinct from WLED's built-in effects — these are authored as code against the device's coordinate map, so they can react to each LED's real physical x/y position). Use play_scene_live to run one on real hardware.",
     outputSchema: { scenes: z.array(z.object({ id: z.string(), name: z.string(), description: z.string() })) },
@@ -557,6 +575,7 @@ const sceneSpec = z.object({
 server.registerTool(
   "play_scene_live",
   {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     description:
       "Stream a scene to real WLED hardware in realtime over DDP, bypassing WLED's own effect engine so the scene can use physical LED position. Requires a coordinate map for the device (calibration/<device>.json). Pass either a scene id from list_scenes, or an inline spec (palette + pattern) to compose a one-off scene on the fly — e.g. for a spontaneous request like 'a romantic scene in these colors' — with no code change or release needed. Calls of 20s or less finish before returning; longer or open-ended runs start in the background — use stop_live to cancel those.",
     inputSchema: {
@@ -584,6 +603,7 @@ server.registerTool(
 server.registerTool(
   "stop_live",
   {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     description: "Stop a background live scene stream started by play_scene_live. WLED returns to its own effect engine shortly after streaming stops.",
     inputSchema: { device: z.string() },
     outputSchema: { stopped: z.boolean().describe("false if there was no active stream for this device") },
@@ -620,6 +640,7 @@ const coordinateMap = z
 server.registerTool(
   "get_calibration",
   {
+    annotations: { readOnlyHint: true },
     description:
       "Get a device's coordinate map (the physical x/y layout used by custom scenes to react to real LED position). Reads the local calibration/<device>.json used directly by this MCP server. `calibration` is null if the device hasn't been calibrated yet.",
     inputSchema: { device: z.string() },
@@ -637,6 +658,7 @@ server.registerTool(
 server.registerTool(
   "set_calibration",
   {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     description:
       "Save a device's coordinate map (see get_calibration for the shape). Writes both the local calibration/<device>.json (used by this MCP server directly) and the trigger add-on's copy (used for scheduled/ad-hoc scenes), if TRIGGER_SERVER_URL/TOKEN are configured -- a device's calibration generally needs to be saved to both places to work end-to-end.",
     inputSchema: { device: z.string(), map: coordinateMap },
@@ -724,6 +746,7 @@ const scheduleConfigOutputSchema = {
 server.registerTool(
   "list_schedule",
   {
+    annotations: { readOnlyHint: true },
     description: "Read the full holiday schedule: location, default schedule, all holiday windows, and all one-off overrides.",
     outputSchema: scheduleConfigOutputSchema,
   },
@@ -739,6 +762,7 @@ server.registerTool(
 server.registerTool(
   "set_schedule_location",
   {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     description: "Set the latitude/longitude used to resolve 'dusk'/'dawn' schedule times.",
     inputSchema: { latitude: z.number(), longitude: z.number() },
     outputSchema: scheduleConfigOutputSchema,
@@ -755,6 +779,7 @@ server.registerTool(
 server.registerTool(
   "set_default_schedule",
   {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     description: "Set the base everyday schedule (lowest priority — active whenever no holiday window or override applies).",
     inputSchema: {
       onTime: timeValue,
@@ -777,6 +802,7 @@ server.registerTool(
 server.registerTool(
   "add_holiday_window",
   {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     description: "Add or update (by id) a recurring annual holiday window — beats the default schedule, loses to any active override.",
     inputSchema: {
       id: z.string().describe("Stable identifier, e.g. 'christmas'. Reuse to update an existing window."),
@@ -803,6 +829,7 @@ server.registerTool(
 server.registerTool(
   "remove_holiday_window",
   {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     description: "Remove a holiday window by id.",
     inputSchema: { id: z.string() },
     outputSchema: scheduleConfigOutputSchema,
@@ -819,6 +846,7 @@ server.registerTool(
 server.registerTool(
   "add_override",
   {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     description:
       "Add or update (by id) a one-off special-event override (birthday, anniversary, a specific game day) — highest priority, beats both holiday windows and the default schedule for its date.",
     inputSchema: {
@@ -847,6 +875,7 @@ server.registerTool(
 server.registerTool(
   "remove_override",
   {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     description: "Remove an override by id.",
     inputSchema: { id: z.string() },
     outputSchema: scheduleConfigOutputSchema,

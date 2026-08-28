@@ -54,13 +54,25 @@ routes end-to-end, and real WLED hardware to see anything actually light up.
 
 ## Verifying changes
 
-- `npm run build` after any `src/` edit — clean `tsc` is the baseline bar.
-- For logic that doesn't need live hardware, a quick Node script importing
+- `npm test` (build + run the suite) — covers the pure-logic modules:
+  `dateRules.ts` (movable-holiday math), `holidaySchedule.ts`'s
+  `evaluateSchedule` (the 3-tier priority resolution), and `sceneSpec.ts`
+  (the pattern interpreter). Add cases here for any change to that logic —
+  this is what CI runs on every push/PR.
+- Note: `node --test dist` (bare directory) can hang on this project — it
+  ends up loading `index.ts`/`triggerServer.ts` as a side effect, and
+  `triggerServer.ts` opens a listening socket that never closes. Always run
+  against an explicit glob (`node --test dist/*.test.js`, i.e. `npm test`)
+  instead.
+- For logic not yet covered by the suite, a quick Node script importing
   straight from `mcp-server/dist/*.js` (write in, read back, assert) is
-  faster than round-tripping through a real device.
-- For anything that does need hardware, prefer a short, bounded test (a few
-  seconds of a live scene, a round-trip write+read against a throwaway
-  device/calibration name) over guessing from code review alone.
+  still faster than round-tripping through a real device — consider adding
+  it as a real `*.test.ts` instead, though, so it doesn't have to be redone
+  next time.
+- For anything that needs actual hardware, prefer a short, bounded live test
+  (a few seconds of a live scene, a round-trip write+read against a
+  throwaway device/calibration name) over guessing from code review alone —
+  the test suite can't cover this part.
 
 ## Working with Claude Code on this repo
 

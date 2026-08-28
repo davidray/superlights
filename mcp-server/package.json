@@ -21,7 +21,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "trigger": "node dist/triggerServer.js",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "npm run build && node --test dist/*.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",

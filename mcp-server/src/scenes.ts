@@ -157,6 +157,16 @@ export const scenes: Scene[] = [
       return hslToRgb(hue, 0.55, 0.7);
     },
   },
+  {
+    id: "byu-game-day",
+    name: "BYU Game Day",
+    description: "Royal blue and white bands sweeping across the house — for BYU football game days.",
+    render: (ctx, t) => {
+      const phase = ctx.x * 4 - t * 0.5;
+      const p = ((phase % 1) + 1) % 1;
+      return p < 0.5 ? [0, 46, 93] : [255, 255, 255];
+    },
+  },
 ];
 
 export function findScene(id: string): Scene | undefined {

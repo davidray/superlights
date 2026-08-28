@@ -33,6 +33,12 @@ below) and stream over DDP, bypassing WLED's own effect engine entirely.
 
 ## Setup
 
+Steps 1-2 below need to happen by hand (flashing hardware, installing the
+add-on). After that, the MCP server ships a `setup` prompt that walks
+through the rest conversationally — registering your device, calibrating
+it, and configuring the schedule — checking real state instead of assuming.
+Run it any time after step 3.
+
 ### 1. Flash WLED
 
 Flash your controller with WLED and note its IP (a DHCP reservation is

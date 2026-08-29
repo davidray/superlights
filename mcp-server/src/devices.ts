@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { readJsonFile, writeJsonFile } from "./jsonStore.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -15,9 +15,10 @@ let cache: Record<string, string> | null = null;
 
 function load(): Record<string, string> {
   if (cache) return cache;
-  const raw = readFileSync(CONFIG_PATH, "utf-8");
-  cache = JSON.parse(raw);
-  return cache!;
+  const devices = readJsonFile<Record<string, string>>(CONFIG_PATH);
+  if (!devices) throw new Error(`Devices config not found at ${CONFIG_PATH}.`);
+  cache = devices;
+  return cache;
 }
 
 export function listDevices(): { name: string; host: string }[] {
@@ -50,7 +51,7 @@ export function saveDevice(name: string, host: string): { name: string; host: st
     );
   }
   const devices = { ...load(), [name]: host };
-  writeFileSync(CONFIG_PATH, JSON.stringify(devices, null, 2));
+  writeJsonFile(CONFIG_PATH, devices);
   cache = null;
   return listDevices();
 }
@@ -58,7 +59,7 @@ export function saveDevice(name: string, host: string): { name: string; host: st
 export function removeDevice(name: string): { name: string; host: string }[] {
   const devices = { ...load() };
   delete devices[name];
-  writeFileSync(CONFIG_PATH, JSON.stringify(devices, null, 2));
+  writeJsonFile(CONFIG_PATH, devices);
   cache = null;
   return listDevices();
 }

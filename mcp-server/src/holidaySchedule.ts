@@ -1,8 +1,8 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { resolveTimeValue } from "./sunTimes.js";
 import { resolveDateRule, monthDayFromDate, type DateRule } from "./dateRules.js";
+import { readJsonFile, writeJsonFile } from "./jsonStore.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = process.env.WLED_HOLIDAY_SCHEDULE_CONFIG ?? join(__dirname, "..", "holidaySchedule.json");
@@ -100,12 +100,11 @@ function assertDateRule(rule: DateRule): void {
 }
 
 export function loadConfig(): HolidayScheduleConfig {
-  if (!existsSync(CONFIG_PATH)) return { ...EMPTY_CONFIG };
-  return { ...EMPTY_CONFIG, ...JSON.parse(readFileSync(CONFIG_PATH, "utf-8")) };
+  return { ...EMPTY_CONFIG, ...readJsonFile<Partial<HolidayScheduleConfig>>(CONFIG_PATH) };
 }
 
 export function saveConfig(config: HolidayScheduleConfig): void {
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  writeJsonFile(CONFIG_PATH, config);
 }
 
 export function setLocation(location: Location): HolidayScheduleConfig {

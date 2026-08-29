@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readJsonFile, writeJsonFile } from "./jsonStore.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CALIBRATION_DIR = process.env.WLED_CALIBRATION_DIR ?? join(__dirname, "..", "calibration");
@@ -65,13 +65,11 @@ export interface LedPosition {
 
 export function loadCoordinateMap(device: string): CoordinateMap {
   const path = calibrationPath(device);
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf-8");
-  } catch {
+  const map = readJsonFile<CoordinateMap>(path);
+  if (!map) {
     throw new Error(`No coordinate map for device "${device}" at ${path}. Run calibration or add a placeholder file there.`);
   }
-  return JSON.parse(raw) as CoordinateMap;
+  return map;
 }
 
 /** Returns null if no coordinate map exists yet for this device, instead of throwing. */
@@ -108,8 +106,7 @@ function validateCoordinateMap(map: CoordinateMap): void {
 export function saveCoordinateMap(device: string, map: CoordinateMap): void {
   const path = calibrationPath(device);
   validateCoordinateMap(map);
-  mkdirSync(CALIBRATION_DIR, { recursive: true });
-  writeFileSync(path, JSON.stringify(map, null, 2));
+  writeJsonFile(path, map);
 }
 
 function interpolate(waypoints: Waypoint[], index: number): { x: number; y: number } {

@@ -5,12 +5,17 @@ import { findScene, type Scene } from "./scenes.js";
 import { buildSceneFromSpec, type SceneSpec } from "./sceneSpec.js";
 
 interface LiveStream {
+  /** Unique per registration, so a deferred/stale stop (keyed only by device name) can
+   *  tell whether the stream it was scheduled against is still the current one before
+   *  tearing anything down. */
+  id: number;
   timer: ReturnType<typeof setInterval>;
   sender: DdpSender;
   stopTimeout?: ReturnType<typeof setTimeout>;
 }
 
 const liveStreams = new Map<string, LiveStream>();
+let nextStreamId = 1;
 
 /**
  * Whether THIS process currently has an active stream for `device`. Note that the
@@ -24,6 +29,10 @@ export function isStreaming(device: string): boolean {
   return liveStreams.has(device);
 }
 
+/** Stops whatever stream currently owns `device`, regardless of id. Only call this
+ *  when the caller genuinely wants to preempt the current stream (e.g. a fresh
+ *  playSceneLive call, or an explicit stop_live request) -- not from a deferred
+ *  callback that only owns one specific stream generation. */
 export function stopStream(device: string): boolean {
   const stream = liveStreams.get(device);
   if (!stream) return false;
@@ -32,6 +41,15 @@ export function stopStream(device: string): boolean {
   stream.sender.close();
   liveStreams.delete(device);
   return true;
+}
+
+/** Stops the stream for `device` only if it's still the same registration as `id` --
+ *  i.e. no newer stream has replaced it since. Used by deferred/timed stops so they
+ *  never kill a stream they don't own. */
+function stopStreamIfCurrent(device: string, id: number): void {
+  const stream = liveStreams.get(device);
+  if (!stream || stream.id !== id) return;
+  stopStream(device);
 }
 
 export interface PlaySceneOptions {
@@ -79,20 +97,23 @@ export async function playSceneLive(device: string, sceneOrSpec: string | SceneS
     }
   };
 
+  const id = nextStreamId++;
   const timer = setInterval(tick, 1000 / fps);
-  const stream: LiveStream = { timer, sender };
+  const stream: LiveStream = { id, timer, sender };
   liveStreams.set(device, stream);
   await tick();
 
   const durationSeconds = opts.durationSeconds;
   if (durationSeconds !== undefined && durationSeconds <= 20) {
     await new Promise((resolve) => setTimeout(resolve, durationSeconds * 1000));
-    stopStream(device);
+    // Only stop the stream we started -- a newer playSceneLive call (or an explicit
+    // stop_live) may have already replaced it on this device while we were asleep.
+    stopStreamIfCurrent(device, id);
     return { scene, backgrounded: false };
   }
 
   if (durationSeconds !== undefined) {
-    stream.stopTimeout = setTimeout(() => stopStream(device), durationSeconds * 1000);
+    stream.stopTimeout = setTimeout(() => stopStreamIfCurrent(device, id), durationSeconds * 1000);
   }
   return { scene, backgrounded: true };
 }

@@ -1,21 +1,19 @@
 import "./loadEnv.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { listDevices, resolveDevice, saveDevice, removeDevice } from "./devices.js";
+import { listDevices, saveDevice, removeDevice } from "./devices.js";
 import { tryLoadCoordinateMap, saveCoordinateMap, type CoordinateMap } from "./coordinateMap.js";
-import { WledClient, findByName, type WledSegment } from "./wledClient.js";
+import { findByName, type WledSegment } from "./wledClient.js";
 import { parseFxData } from "./fxdata.js";
 import { scenes } from "./scenes.js";
 import * as actions from "./actions.js";
+import { clientFor } from "./actions.js";
 import { playSceneLive, stopStream } from "./liveStreamController.js";
 import { triggerServer } from "./triggerServerClient.js";
 
 const server = new McpServer({ name: "wled-lights", version: "0.1.0" });
-
-function clientFor(device: string): WledClient {
-  return new WledClient(resolveDevice(device));
-}
 
 // For tools registered with an outputSchema: the SDK requires structuredContent when
 // present, and validates it against that schema before it reaches the client. `content`
@@ -26,6 +24,24 @@ function structured(value: Record<string, unknown>) {
 
 function errorText(err: unknown) {
   return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
+}
+
+// Every tool handler below wants the same try/catch -> errorText(err) boilerplate. Wrap
+// once here instead of repeating it in each of the ~29 registerTool calls. Generic over
+// the handler's exact argument tuple so it transparently supports both the zero-arg
+// handlers (tools with no inputSchema) and the (args, extra) handlers (tools with one),
+// preserving whatever parameter types registerTool's contextual typing would have given
+// the unwrapped handler.
+function withErrorHandling<Args extends unknown[]>(
+  handler: (...args: Args) => Promise<CallToolResult>
+): (...args: Args) => Promise<CallToolResult> {
+  return async (...args: Args) => {
+    try {
+      return await handler(...args);
+    } catch (err) {
+      return errorText(err);
+    }
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -72,13 +88,9 @@ server.registerTool(
     description: "List the WLED devices configured in devices.json, by name.",
     outputSchema: { devices: z.array(z.object({ name: z.string(), host: z.string() })) },
   },
-  async () => {
-    try {
-      return structured({ devices: listDevices() });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async () => {
+    return structured({ devices: listDevices() });
+  })
 );
 
 // A numeric id resolved to a human-readable name, e.g. {id: 3, name: "Breathe"} for an
@@ -116,42 +128,38 @@ server.registerTool(
       segments: z.array(deviceSegmentState),
     },
   },
-  async ({ device }) => {
-    try {
-      const client = clientFor(device);
-      const [state, info, effects, palettes] = await Promise.all([
-        client.getState(),
-        client.getInfo(),
-        client.getEffects(),
-        client.getPalettes(),
-      ]);
-      const segs = Array.isArray(state.seg) ? state.seg : state.seg ? [state.seg] : [];
-      const segments = segs.map((s) => ({
-        id: s.id,
-        start: s.start,
-        stop: s.stop,
-        on: s.on,
-        brightness: s.bri,
-        effect: typeof s.fx === "number" ? { id: s.fx, name: effects[s.fx] ?? "?" } : s.fx,
-        speed: s.sx,
-        intensity: s.ix,
-        palette: typeof s.pal === "number" ? { id: s.pal, name: palettes[s.pal] ?? "?" } : s.pal,
-        colors: s.col,
-      }));
-      return structured({
-        device,
-        name: info.name,
-        firmware: info.ver,
-        ledCount: info.leds?.count,
-        power: state.on,
-        brightness: state.bri,
-        currentPreset: state.ps,
-        segments,
-      });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device }) => {
+    const client = clientFor(device);
+    const [state, info, effects, palettes] = await Promise.all([
+      client.getState(),
+      client.getInfo(),
+      client.getEffects(),
+      client.getPalettes(),
+    ]);
+    const segs = Array.isArray(state.seg) ? state.seg : state.seg ? [state.seg] : [];
+    const segments = segs.map((s) => ({
+      id: s.id,
+      start: s.start,
+      stop: s.stop,
+      on: s.on,
+      brightness: s.bri,
+      effect: typeof s.fx === "number" ? { id: s.fx, name: effects[s.fx] ?? "?" } : s.fx,
+      speed: s.sx,
+      intensity: s.ix,
+      palette: typeof s.pal === "number" ? { id: s.pal, name: palettes[s.pal] ?? "?" } : s.pal,
+      colors: s.col,
+    }));
+    return structured({
+      device,
+      name: info.name,
+      firmware: info.ver,
+      ledCount: info.leds?.count,
+      power: state.on,
+      brightness: state.bri,
+      currentPreset: state.ps,
+      segments,
+    });
+  })
 );
 
 const deviceList = z.array(z.object({ name: z.string(), host: z.string() }));
@@ -170,19 +178,15 @@ server.registerTool(
     inputSchema: { name: z.string(), host: z.string().describe("IP address or hostname, e.g. 192.168.1.50") },
     outputSchema: deviceWriteOutputSchema,
   },
-  async ({ name, host }) => {
+  withErrorHandling(async ({ name, host }) => {
+    const local = saveDevice(name, host);
     try {
-      const local = saveDevice(name, host);
-      try {
-        const remote = (await triggerServer.upsertDevice(name, host)) as { name: string; host: string }[];
-        return structured({ local, remote });
-      } catch (err) {
-        return structured({ local, remoteError: `Saved locally, but couldn't reach the trigger add-on: ${(err as Error).message}` });
-      }
+      const remote = (await triggerServer.upsertDevice(name, host)) as { name: string; host: string }[];
+      return structured({ local, remote });
     } catch (err) {
-      return errorText(err);
+      return structured({ local, remoteError: `Saved locally, but couldn't reach the trigger add-on: ${(err as Error).message}` });
     }
-  }
+  })
 );
 
 server.registerTool(
@@ -193,19 +197,15 @@ server.registerTool(
     inputSchema: { name: z.string() },
     outputSchema: deviceWriteOutputSchema,
   },
-  async ({ name }) => {
+  withErrorHandling(async ({ name }) => {
+    const local = removeDevice(name);
     try {
-      const local = removeDevice(name);
-      try {
-        const remote = (await triggerServer.removeDevice(name)) as { name: string; host: string }[];
-        return structured({ local, remote });
-      } catch (err) {
-        return structured({ local, remoteError: `Removed locally, but couldn't reach the trigger add-on: ${(err as Error).message}` });
-      }
+      const remote = (await triggerServer.removeDevice(name)) as { name: string; host: string }[];
+      return structured({ local, remote });
     } catch (err) {
-      return errorText(err);
+      return structured({ local, remoteError: `Removed locally, but couldn't reach the trigger add-on: ${(err as Error).message}` });
     }
-  }
+  })
 );
 
 // ---------------------------------------------------------------------------
@@ -219,14 +219,10 @@ server.registerTool(
     inputSchema: { device: z.string() },
     outputSchema: { effects: z.array(z.object({ id: z.number(), name: z.string() })) },
   },
-  async ({ device }) => {
-    try {
-      const effects = await clientFor(device).getEffects();
-      return structured({ effects: effects.map((name, id) => ({ id, name })).filter((e) => e.name !== "RSVD" && e.name !== "-") });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device }) => {
+    const effects = await clientFor(device).getEffects();
+    return structured({ effects: effects.map((name, id) => ({ id, name })).filter((e) => e.name !== "RSVD" && e.name !== "-") });
+  })
 );
 
 server.registerTool(
@@ -237,14 +233,10 @@ server.registerTool(
     inputSchema: { device: z.string() },
     outputSchema: { palettes: z.array(z.object({ id: z.number(), name: z.string() })) },
   },
-  async ({ device }) => {
-    try {
-      const palettes = await clientFor(device).getPalettes();
-      return structured({ palettes: palettes.map((name, id) => ({ id, name })) });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device }) => {
+    const palettes = await clientFor(device).getPalettes();
+    return structured({ palettes: palettes.map((name, id) => ({ id, name })) });
+  })
 );
 
 server.registerTool(
@@ -266,18 +258,26 @@ server.registerTool(
       defaults: z.record(z.string(), z.string()),
     },
   },
-  async ({ device, effect }) => {
-    try {
-      const client = clientFor(device);
-      const effects = await client.getEffects();
-      const id = typeof effect === "number" ? effect : findByName(effects, effect);
-      if (id === undefined) return errorText(new Error(`No effect matching "${effect}". Call list_effects first.`));
-      const fxdata = await client.getFxData();
-      return structured({ id, name: effects[id], ...parseFxData(fxdata[id] ?? "") });
-    } catch (err) {
-      return errorText(err);
+  withErrorHandling(async ({ device, effect }) => {
+    const client = clientFor(device);
+    // getFxData doesn't depend on the resolved effect id, so fetch it alongside
+    // getEffects instead of waiting on effect resolution first.
+    const [effects, fxdata] = await Promise.all([client.getEffects(), client.getFxData()]);
+
+    let id: number;
+    if (typeof effect === "number") {
+      if (!Number.isInteger(effect) || effect < 0 || effect >= effects.length) {
+        return errorText(new Error(`Effect id ${effect} is out of range (must be 0-${effects.length - 1}). Call list_effects first.`));
+      }
+      id = effect;
+    } else {
+      const found = findByName(effects, effect);
+      if (found === undefined) return errorText(new Error(`No effect matching "${effect}". Call list_effects first.`));
+      id = found;
     }
-  }
+
+    return structured({ id, name: effects[id], ...parseFxData(fxdata[id] ?? "") });
+  })
 );
 
 // ---------------------------------------------------------------------------
@@ -293,14 +293,10 @@ server.registerTool(
     inputSchema: { device: z.string(), on: z.union([z.boolean(), z.literal("toggle")]) },
     outputSchema: ok,
   },
-  async ({ device, on }) => {
-    try {
-      await actions.setPower(device, on);
-      return structured({ ok: true });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device, on }) => {
+    await actions.setPower(device, on);
+    return structured({ ok: true });
+  })
 );
 
 server.registerTool(
@@ -311,14 +307,10 @@ server.registerTool(
     inputSchema: { device: z.string(), brightness: z.number().int().min(1).max(255) },
     outputSchema: ok,
   },
-  async ({ device, brightness }) => {
-    try {
-      await actions.setBrightness(device, brightness);
-      return structured({ ok: true });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device, brightness }) => {
+    await actions.setBrightness(device, brightness);
+    return structured({ ok: true });
+  })
 );
 
 // ---------------------------------------------------------------------------
@@ -352,14 +344,10 @@ server.registerTool(
       }),
     },
   },
-  async ({ device, effect, segment, speed, intensity, palette, colors }) => {
-    try {
-      const result = await actions.runEffect(device, effect, { segment, speed, intensity, palette, colors });
-      return structured({ applied: { effect: result.effectName, ...result.applied } });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device, effect, segment, speed, intensity, palette, colors }) => {
+    const result = await actions.runEffect(device, effect, { segment, speed, intensity, palette, colors });
+    return structured({ applied: { effect: result.effectName, ...result.applied } });
+  })
 );
 
 server.registerTool(
@@ -374,14 +362,10 @@ server.registerTool(
     },
     outputSchema: ok,
   },
-  async ({ device, segment }) => {
-    try {
-      await clientFor(device).postState({ seg: [segment as WledSegment] });
-      return structured({ ok: true });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device, segment }) => {
+    await clientFor(device).postState({ seg: [segment as WledSegment] });
+    return structured({ ok: true });
+  })
 );
 
 // ---------------------------------------------------------------------------
@@ -400,13 +384,9 @@ server.registerTool(
     inputSchema: { device: z.string() },
     outputSchema: { presets: z.record(z.string(), presetEntry).describe("Keyed by preset slot number, as a string") },
   },
-  async ({ device }) => {
-    try {
-      return structured({ presets: await clientFor(device).getPresets() });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device }) => {
+    return structured({ presets: await clientFor(device).getPresets() });
+  })
 );
 
 server.registerTool(
@@ -425,20 +405,16 @@ server.registerTool(
     },
     outputSchema: { ok: z.literal(true), slot: z.number(), name: z.string() },
   },
-  async ({ device, slot, name, includeBrightness, includeBounds, includeSelection }) => {
-    try {
-      await clientFor(device).postState({
-        psave: slot,
-        n: name,
-        ib: includeBrightness,
-        sb: includeBounds,
-        sc: includeSelection,
-      } as any);
-      return structured({ ok: true, slot, name });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device, slot, name, includeBrightness, includeBounds, includeSelection }) => {
+    await clientFor(device).postState({
+      psave: slot,
+      n: name,
+      ib: includeBrightness,
+      sb: includeBounds,
+      sc: includeSelection,
+    } as any);
+    return structured({ ok: true, slot, name });
+  })
 );
 
 server.registerTool(
@@ -449,14 +425,10 @@ server.registerTool(
     inputSchema: { device: z.string(), slot: z.number().int().min(1).max(250), transitionMs: z.number().int().min(0).optional() },
     outputSchema: ok,
   },
-  async ({ device, slot, transitionMs }) => {
-    try {
-      await actions.applyPreset(device, slot, transitionMs);
-      return structured({ ok: true });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device, slot, transitionMs }) => {
+    await actions.applyPreset(device, slot, transitionMs);
+    return structured({ ok: true });
+  })
 );
 
 server.registerTool(
@@ -467,14 +439,10 @@ server.registerTool(
     inputSchema: { device: z.string(), slot: z.number().int().min(1).max(250) },
     outputSchema: ok,
   },
-  async ({ device, slot }) => {
-    try {
-      await clientFor(device).postState({ pdel: slot });
-      return structured({ ok: true });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device, slot }) => {
+    await clientFor(device).postState({ pdel: slot });
+    return structured({ ok: true });
+  })
 );
 
 // ---------------------------------------------------------------------------
@@ -496,23 +464,19 @@ server.registerTool(
     },
     outputSchema: ok,
   },
-  async ({ device, presetSlots, durationSeconds, transitionSeconds, repeat, endPresetSlot }) => {
-    try {
-      const toTenths = (s: number | number[]) => (Array.isArray(s) ? s.map((v) => Math.round(v * 10)) : Math.round(s * 10));
-      await clientFor(device).postState({
-        playlist: {
-          ps: presetSlots,
-          dur: toTenths(durationSeconds),
-          ...(transitionSeconds !== undefined ? { transition: toTenths(transitionSeconds) } : {}),
-          repeat,
-          ...(endPresetSlot !== undefined ? { end: endPresetSlot } : {}),
-        },
-      });
-      return structured({ ok: true });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device, presetSlots, durationSeconds, transitionSeconds, repeat, endPresetSlot }) => {
+    const toTenths = (s: number | number[]) => (Array.isArray(s) ? s.map((v) => Math.round(v * 10)) : Math.round(s * 10));
+    await clientFor(device).postState({
+      playlist: {
+        ps: presetSlots,
+        dur: toTenths(durationSeconds),
+        ...(transitionSeconds !== undefined ? { transition: toTenths(transitionSeconds) } : {}),
+        repeat,
+        ...(endPresetSlot !== undefined ? { end: endPresetSlot } : {}),
+      },
+    });
+    return structured({ ok: true });
+  })
 );
 
 // ---------------------------------------------------------------------------
@@ -530,14 +494,10 @@ server.registerTool(
     // (often the full post-write state, but that varies by firmware version).
     outputSchema: { response: z.unknown().describe("Whatever WLED's /json/state endpoint returned, or `true` if it returned nothing") },
   },
-  async ({ device, state }) => {
-    try {
-      const result = await clientFor(device).postState(state as any);
-      return structured({ response: result ?? true });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device, state }) => {
+    const result = await clientFor(device).postState(state as any);
+    return structured({ response: result ?? true });
+  })
 );
 
 // ---------------------------------------------------------------------------
@@ -560,7 +520,7 @@ server.registerTool(
       "List custom spatially-aware scenes (distinct from WLED's built-in effects — these are authored as code against the device's coordinate map, so they can react to each LED's real physical x/y position). Use play_scene_live to run one on real hardware.",
     outputSchema: { scenes: z.array(z.object({ id: z.string(), name: z.string(), description: z.string() })) },
   },
-  async () => structured({ scenes: scenes.map(({ id, name, description }) => ({ id, name, description })) })
+  withErrorHandling(async () => structured({ scenes: scenes.map(({ id, name, description }) => ({ id, name, description })) }))
 );
 
 const rgbChannel = z.number().int().min(0).max(255);
@@ -596,28 +556,24 @@ server.registerTool(
       durationSeconds: z.number().optional().describe("Echoed back from the request, if given"),
     },
   },
-  async ({ device, scene, durationSeconds, fps }) => {
+  withErrorHandling(async ({ device, scene, durationSeconds, fps }) => {
+    // Best-effort: this process can't see a stream the trigger add-on started (see
+    // note above), so ask it directly before starting a second, conflicting stream
+    // to the same device. If the add-on isn't configured or isn't reachable, proceed
+    // anyway -- this check is a courtesy, not a hard dependency.
     try {
-      // Best-effort: this process can't see a stream the trigger add-on started (see
-      // note above), so ask it directly before starting a second, conflicting stream
-      // to the same device. If the add-on isn't configured or isn't reachable, proceed
-      // anyway -- this check is a courtesy, not a hard dependency.
-      try {
-        const remote = await triggerServer.streamActive(device);
-        if (remote.active) {
-          return errorText(
-            new Error(`The trigger add-on already has an active stream for "${device}". Stop it first (stop_live also stops the add-on's stream).`)
-          );
-        }
-      } catch {
-        // Not configured, or unreachable -- proceed with the local-only check below.
+      const remote = await triggerServer.streamActive(device);
+      if (remote.active) {
+        return errorText(
+          new Error(`The trigger add-on already has an active stream for "${device}". Stop it first (stop_live also stops the add-on's stream).`)
+        );
       }
-      const result = await playSceneLive(device, scene, { durationSeconds, fps });
-      return structured({ scene: result.scene.name, backgrounded: result.backgrounded, ...(durationSeconds !== undefined ? { durationSeconds } : {}) });
-    } catch (err) {
-      return errorText(err);
+    } catch {
+      // Not configured, or unreachable -- proceed with the local-only check below.
     }
-  }
+    const result = await playSceneLive(device, scene, { durationSeconds, fps });
+    return structured({ scene: result.scene.name, backgrounded: result.backgrounded, ...(durationSeconds !== undefined ? { durationSeconds } : {}) });
+  })
 );
 
 server.registerTool(
@@ -632,7 +588,7 @@ server.registerTool(
       remoteError: z.string().optional().describe("Set if the trigger add-on couldn't be reached to check for/stop its own stream"),
     },
   },
-  async ({ device }) => {
+  withErrorHandling(async ({ device }) => {
     const local = stopStream(device);
     try {
       const remote = await triggerServer.stopScene(device);
@@ -640,7 +596,7 @@ server.registerTool(
     } catch (err) {
       return structured({ stopped: local, remoteError: (err as Error).message });
     }
-  }
+  })
 );
 
 const waypoint = z.object({
@@ -678,13 +634,9 @@ server.registerTool(
     inputSchema: { device: z.string() },
     outputSchema: { calibration: coordinateMap.nullable() },
   },
-  async ({ device }) => {
-    try {
-      return structured({ calibration: tryLoadCoordinateMap(device) });
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ device }) => {
+    return structured({ calibration: tryLoadCoordinateMap(device) });
+  })
 );
 
 server.registerTool(
@@ -700,19 +652,15 @@ server.registerTool(
       remoteError: z.string().optional(),
     },
   },
-  async ({ device, map }) => {
+  withErrorHandling(async ({ device, map }) => {
+    saveCoordinateMap(device, map as CoordinateMap);
     try {
-      saveCoordinateMap(device, map as CoordinateMap);
-      try {
-        await triggerServer.setCalibration(device, map);
-        return structured({ ok: true, savedRemote: true });
-      } catch (err) {
-        return structured({ ok: true, savedRemote: false, remoteError: (err as Error).message });
-      }
+      await triggerServer.setCalibration(device, map);
+      return structured({ ok: true, savedRemote: true });
     } catch (err) {
-      return errorText(err);
+      return structured({ ok: true, savedRemote: false, remoteError: (err as Error).message });
     }
-  }
+  })
 );
 
 // ---------------------------------------------------------------------------
@@ -782,13 +730,9 @@ server.registerTool(
     description: "Read the full holiday schedule: location, default schedule, all holiday windows, and all one-off overrides.",
     outputSchema: scheduleConfigOutputSchema,
   },
-  async () => {
-    try {
-      return structured((await triggerServer.getSchedule()) as Record<string, unknown>);
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async () => {
+    return structured((await triggerServer.getSchedule()) as Record<string, unknown>);
+  })
 );
 
 server.registerTool(
@@ -799,13 +743,9 @@ server.registerTool(
     inputSchema: { latitude: z.number(), longitude: z.number() },
     outputSchema: scheduleConfigOutputSchema,
   },
-  async ({ latitude, longitude }) => {
-    try {
-      return structured((await triggerServer.setLocation({ latitude, longitude })) as Record<string, unknown>);
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ latitude, longitude }) => {
+    return structured((await triggerServer.setLocation({ latitude, longitude })) as Record<string, unknown>);
+  })
 );
 
 server.registerTool(
@@ -822,13 +762,9 @@ server.registerTool(
     },
     outputSchema: scheduleConfigOutputSchema,
   },
-  async (schedule) => {
-    try {
-      return structured((await triggerServer.setDefaultSchedule(schedule)) as Record<string, unknown>);
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async (schedule) => {
+    return structured((await triggerServer.setDefaultSchedule(schedule)) as Record<string, unknown>);
+  })
 );
 
 server.registerTool(
@@ -849,13 +785,9 @@ server.registerTool(
     },
     outputSchema: scheduleConfigOutputSchema,
   },
-  async (window) => {
-    try {
-      return structured((await triggerServer.upsertWindow(window)) as Record<string, unknown>);
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async (window) => {
+    return structured((await triggerServer.upsertWindow(window)) as Record<string, unknown>);
+  })
 );
 
 server.registerTool(
@@ -866,13 +798,9 @@ server.registerTool(
     inputSchema: { id: z.string() },
     outputSchema: scheduleConfigOutputSchema,
   },
-  async ({ id }) => {
-    try {
-      return structured((await triggerServer.removeWindow(id)) as Record<string, unknown>);
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ id }) => {
+    return structured((await triggerServer.removeWindow(id)) as Record<string, unknown>);
+  })
 );
 
 server.registerTool(
@@ -895,13 +823,9 @@ server.registerTool(
     },
     outputSchema: scheduleConfigOutputSchema,
   },
-  async (override) => {
-    try {
-      return structured((await triggerServer.upsertOverride({ ...override, date: override.date ?? "" })) as Record<string, unknown>);
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async (override) => {
+    return structured((await triggerServer.upsertOverride({ ...override, date: override.date ?? "" })) as Record<string, unknown>);
+  })
 );
 
 server.registerTool(
@@ -912,13 +836,9 @@ server.registerTool(
     inputSchema: { id: z.string() },
     outputSchema: scheduleConfigOutputSchema,
   },
-  async ({ id }) => {
-    try {
-      return structured((await triggerServer.removeOverride(id)) as Record<string, unknown>);
-    } catch (err) {
-      return errorText(err);
-    }
-  }
+  withErrorHandling(async ({ id }) => {
+    return structured((await triggerServer.removeOverride(id)) as Record<string, unknown>);
+  })
 );
 
 const transport = new StdioServerTransport();

@@ -1,5 +1,6 @@
 import "./loadEnv.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createHash, timingSafeEqual } from "node:crypto";
 import * as actions from "./actions.js";
 import { playSceneLive, stopStream, isStreaming } from "./liveStreamController.js";
 import type { SceneSpec } from "./sceneSpec.js";
@@ -39,6 +40,15 @@ interface TriggerBody {
   [key: string]: unknown;
 }
 
+/** Constant-time string comparison -- hashes both sides to a fixed-length digest first
+ *  since timingSafeEqual requires equal-length buffers, then compares those. Avoids
+ *  leaking the token's length or contents via response-time differences. */
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const ha = createHash("sha256").update(a).digest();
+  const hb = createHash("sha256").update(b).digest();
+  return timingSafeEqual(ha, hb);
+}
+
 function send(res: ServerResponse, status: number, body: unknown): void {
   const json = JSON.stringify(body);
   res.writeHead(status, { "Content-Type": "application/json" });
@@ -65,16 +75,28 @@ async function handleTrigger(body: TriggerBody): Promise<unknown> {
 
   switch (action) {
     case "power":
-      await actions.setPower(device, body.on as boolean | "toggle");
+      if (typeof body.on !== "boolean" && body.on !== "toggle") {
+        throw new Error(`'power' action requires 'on' to be a boolean or "toggle"`);
+      }
+      await actions.setPower(device, body.on);
       return { ok: true };
     case "brightness":
-      await actions.setBrightness(device, body.value as number);
+      if (typeof body.value !== "number") {
+        throw new Error("'brightness' action requires numeric 'value'");
+      }
+      await actions.setBrightness(device, body.value);
       return { ok: true };
     case "preset":
-      await actions.applyPreset(device, body.slot as number, body.transitionMs as number | undefined);
+      if (typeof body.slot !== "number") {
+        throw new Error("'preset' action requires numeric 'slot'");
+      }
+      await actions.applyPreset(device, body.slot, body.transitionMs as number | undefined);
       return { ok: true };
     case "effect": {
-      const result = await actions.runEffect(device, body.effect as string | number, {
+      if (typeof body.effect !== "string" && typeof body.effect !== "number") {
+        throw new Error("'effect' action requires 'effect' (a name or numeric id)");
+      }
+      const result = await actions.runEffect(device, body.effect, {
         segment: body.segment as number | undefined,
         speed: body.speed as number | undefined,
         intensity: body.intensity as number | undefined,
@@ -84,6 +106,9 @@ async function handleTrigger(body: TriggerBody): Promise<unknown> {
       return { ok: true, appliedEffect: result.effectName };
     }
     case "scene": {
+      if (typeof body.scene !== "string" && (typeof body.scene !== "object" || body.scene === null)) {
+        throw new Error("'scene' action requires 'scene' (a scene id or an inline scene spec)");
+      }
       const result = await playSceneLive(device, body.scene as string | SceneSpec, {
         durationSeconds: body.durationSeconds as number | undefined,
         fps: body.fps as number | undefined,
@@ -100,7 +125,7 @@ async function handleTrigger(body: TriggerBody): Promise<unknown> {
 const server = createServer(async (req, res) => {
   if (TOKEN) {
     const auth = req.headers.authorization;
-    if (auth !== `Bearer ${TOKEN}`) {
+    if (!auth || !timingSafeStringEqual(auth, `Bearer ${TOKEN}`)) {
       console.error(
         `[triggerServer] auth mismatch: header ${auth ? "present" : "MISSING"}, ` +
           `starts-with-Bearer=${auth?.startsWith("Bearer ") ?? false}, ` +

@@ -504,7 +504,13 @@ server.registerTool(
 // Custom scenes (spatially-aware animations, distinct from WLED's built-in effects)
 // Rendered against a coordinate map (see calibration/*.json) and streamed live over
 // DDP, or previewed by the Mac simulator app via the local preview HTTP server.
-// Streaming itself lives in liveStreamController.ts, shared with the HA trigger server.
+// Streaming itself lives in liveStreamController.ts. NOTE: this MCP server and the HA
+// trigger add-on are separate OS processes (see CONTRIBUTING.md) that each get their
+// own private in-memory stream state -- it is NOT actually shared between them. A
+// stream started by one process can only be stopped/observed by that same process
+// directly; play_scene_live/stop_live below best-effort proxy to the other process
+// over HTTP (via triggerServerClient.ts) so starting checks for -- and stopping
+// reaches -- a stream the other side started, whenever TRIGGER_SERVER_URL is configured.
 
 server.registerTool(
   "list_scenes",
@@ -551,6 +557,20 @@ server.registerTool(
     },
   },
   withErrorHandling(async ({ device, scene, durationSeconds, fps }) => {
+    // Best-effort: this process can't see a stream the trigger add-on started (see
+    // note above), so ask it directly before starting a second, conflicting stream
+    // to the same device. If the add-on isn't configured or isn't reachable, proceed
+    // anyway -- this check is a courtesy, not a hard dependency.
+    try {
+      const remote = await triggerServer.streamActive(device);
+      if (remote.active) {
+        return errorText(
+          new Error(`The trigger add-on already has an active stream for "${device}". Stop it first (stop_live also stops the add-on's stream).`)
+        );
+      }
+    } catch {
+      // Not configured, or unreachable -- proceed with the local-only check below.
+    }
     const result = await playSceneLive(device, scene, { durationSeconds, fps });
     return structured({ scene: result.scene.name, backgrounded: result.backgrounded, ...(durationSeconds !== undefined ? { durationSeconds } : {}) });
   })
@@ -560,11 +580,23 @@ server.registerTool(
   "stop_live",
   {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-    description: "Stop a background live scene stream started by play_scene_live. WLED returns to its own effect engine shortly after streaming stops.",
+    description:
+      "Stop a background live scene stream started by play_scene_live, whether it was started from here or (best-effort) from the HA trigger add-on. WLED returns to its own effect engine shortly after streaming stops.",
     inputSchema: { device: z.string() },
-    outputSchema: { stopped: z.boolean().describe("false if there was no active stream for this device") },
+    outputSchema: {
+      stopped: z.boolean().describe("true if a stream was stopped locally, on the trigger add-on, or both"),
+      remoteError: z.string().optional().describe("Set if the trigger add-on couldn't be reached to check for/stop its own stream"),
+    },
   },
-  withErrorHandling(async ({ device }) => structured({ stopped: stopStream(device) }))
+  withErrorHandling(async ({ device }) => {
+    const local = stopStream(device);
+    try {
+      const remote = await triggerServer.stopScene(device);
+      return structured({ stopped: local || remote.stopped });
+    } catch (err) {
+      return structured({ stopped: local, remoteError: (err as Error).message });
+    }
+  })
 );
 
 const waypoint = z.object({

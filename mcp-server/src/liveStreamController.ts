@@ -17,6 +17,18 @@ interface LiveStream {
 const liveStreams = new Map<string, LiveStream>();
 let nextStreamId = 1;
 
+/**
+ * Whether THIS process currently has an active stream for `device`. Note that the
+ * local MCP server and the trigger add-on are separate OS processes that each get
+ * their own private `liveStreams` map (see README/CONTRIBUTING) -- this only reflects
+ * this process's own state, not the other one's. Callers that need the full picture
+ * (e.g. before starting a new stream) should also check the other process via
+ * triggerServerClient.ts's streamActive, where configured.
+ */
+export function isStreaming(device: string): boolean {
+  return liveStreams.has(device);
+}
+
 /** Stops whatever stream currently owns `device`, regardless of id. Only call this
  *  when the caller genuinely wants to preempt the current stream (e.g. a fresh
  *  playSceneLive call, or an explicit stop_live request) -- not from a deferred

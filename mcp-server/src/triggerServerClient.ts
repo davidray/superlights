@@ -46,4 +46,6 @@ export const triggerServer = {
   removeDevice: (name: string) => call(`/devices/${encodeURIComponent(name)}`, { method: "DELETE" }),
   setCalibration: (device: string, map: unknown) =>
     call(`/calibration/${encodeURIComponent(device)}`, { method: "POST", body: JSON.stringify(map) }),
+  streamActive: (device: string) => call(`/streams/${encodeURIComponent(device)}`, { method: "GET" }) as Promise<{ device: string; active: boolean }>,
+  stopScene: (device: string) => call("/trigger", { method: "POST", body: JSON.stringify({ device, action: "stop_scene" }) }) as Promise<{ ok: true; stopped: boolean }>,
 };

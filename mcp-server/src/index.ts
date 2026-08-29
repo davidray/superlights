@@ -527,15 +527,23 @@ const rgbChannel = z.number().int().min(0).max(255);
 const sceneSpec = z.object({
   name: z.string().optional().describe("Human-readable label for status messages, e.g. 'Date Night'"),
   palette: z.array(z.tuple([rgbChannel, rgbChannel, rgbChannel])).min(1).max(8).describe("1-8 colors as [r,g,b] triples"),
-  pattern: z.enum(["solid", "wave", "chase", "twinkle", "pulse", "gradientDrift"]).describe(
-    "solid=static color; wave/gradientDrift=smooth drift through the palette (gradientDrift is slower, single-sweep); chase=hard-edged bands cycling through the palette; twinkle=random sparkle over a dim background; pulse=whole-house brightness breathing over a slowly-cycling base color"
+  pattern: z.enum(["solid", "wave", "chase", "twinkle", "pulse", "gradientDrift", "fireworks", "comet", "rain", "bounce", "aurora", "strobe"]).describe(
+    "solid=static color; wave/gradientDrift=smooth drift through the palette (gradientDrift is slower, single-sweep); chase=hard-edged bands cycling through the palette; twinkle=random sparkle over a dim background; pulse=whole-house brightness breathing over a slowly-cycling base color; " +
+      "fireworks=bursts of expanding rings from random points, each a random palette color, weighted toward the roofline; comet=a bright point with a fading trail looping across the house, cycling palette colors each lap; rain=droplets falling top-to-bottom in independent columns, one palette color per column; " +
+      "bounce=1-3 palette-colored dots bouncing back and forth; aurora=a slow, organic 2-axis color flow with shimmer, like the northern lights; strobe=whole-house synchronized flashes at irregular intervals, lightning-style"
   ),
   speed: z.number().positive().optional().describe("Tempo multiplier, default 1"),
-  bandWidth: z.number().positive().optional().describe("Fraction of the house per repeating band, for wave/chase — smaller means more bands"),
+  bandWidth: z.number().positive().optional().describe(
+    "Fraction of the house per repeating band for wave/chase/aurora (smaller = more bands); also reused as fireworks' ring thickness, comet's trail length, rain's column width, or bounce's dot size (smaller = thinner/narrower)"
+  ),
   direction: z.union([z.literal(1), z.literal(-1)]).optional(),
-  sparkleDensity: z.number().min(0).max(1).optional().describe("Fraction of LEDs lit at once, for twinkle. Default 0.12"),
-  brightnessMin: z.number().min(0).max(1).optional().describe("Brightness floor for twinkle's background / pulse's breathing range"),
-  brightnessMax: z.number().min(0).max(1).optional().describe("Brightness ceiling for pulse's breathing range"),
+  sparkleDensity: z.number().min(0).max(1).optional().describe(
+    "Fraction of LEDs lit at once, for twinkle (default 0.12); also reused as fireworks' spark-texture density within a burst ring, or strobe's per-slot flash probability (default 0.35)"
+  ),
+  brightnessMin: z.number().min(0).max(1).optional().describe(
+    "Brightness floor for twinkle's background, pulse's/fireworks' fade range, aurora's shimmer range, or strobe's between-flash floor"
+  ),
+  brightnessMax: z.number().min(0).max(1).optional().describe("Brightness ceiling for pulse's/fireworks' fade range, aurora's shimmer range, or rain's overall intensity"),
 });
 
 server.registerTool(

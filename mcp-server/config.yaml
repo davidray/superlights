@@ -1,5 +1,5 @@
 name: "Superlights WLED Trigger"
-version: "0.6.0"
+version: "0.7.0"
 slug: "wled_trigger"
 description: "HTTP endpoint for triggering WLED scenes from Home Assistant automations"
 url: "https://github.com/davidray/superlights"

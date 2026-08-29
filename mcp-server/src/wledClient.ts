@@ -1,3 +1,5 @@
+import { httpFetch } from "./httpFetch.js";
+
 export interface WledSegment {
   id?: number;
   start?: number;
@@ -62,26 +64,21 @@ export interface WledInfo {
 }
 
 async function req(baseUrl: string, path: string, init?: RequestInit): Promise<unknown> {
-  const url = `http://${baseUrl}${path}`;
-  let res: Response;
-  try {
-    res = await fetch(url, init);
-  } catch (err) {
-    throw new Error(`Could not reach WLED device at ${baseUrl} (${(err as Error).message}). Is it powered on and on the network?`);
-  }
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`WLED at ${baseUrl} returned HTTP ${res.status} for ${path}: ${body}`);
-  }
-  return res.json();
+  return httpFetch({
+    url: `http://${baseUrl}${path}`,
+    init,
+    onNetworkError: (err) =>
+      new Error(`Could not reach WLED device at ${baseUrl} (${(err as Error).message}). Is it powered on and on the network?`),
+    onHttpError: async (res) => {
+      const body = await res.text().catch(() => "");
+      return new Error(`WLED at ${baseUrl} returned HTTP ${res.status} for ${path}: ${body}`);
+    },
+    parseBody: (res) => res.json(),
+  });
 }
 
 export class WledClient {
   constructor(private baseUrl: string) {}
-
-  async getFullJson(): Promise<{ state: WledState; info: WledInfo; effects: string[]; palettes: string[] }> {
-    return (await req(this.baseUrl, "/json")) as any;
-  }
 
   async getState(): Promise<WledState> {
     return (await req(this.baseUrl, "/json/state")) as WledState;

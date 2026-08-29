@@ -157,16 +157,12 @@ export const scenes: Scene[] = [
       return hslToRgb(hue, 0.55, 0.7);
     },
   },
-  {
-    id: "byu-game-day",
-    name: "BYU Game Day",
-    description: "Royal blue and white bands sweeping across the house — for BYU football game days.",
-    render: (ctx, t) => {
-      const phase = ctx.x * 4 - t * 0.5;
-      const p = ((phase % 1) + 1) % 1;
-      return p < 0.5 ? [0, 46, 93] : [255, 255, 255];
-    },
-  },
+  // A one-off team/personal-color variant (e.g. a "game day" chase in one
+  // household's team colors) belongs here as a local sceneSpec, not as a
+  // permanent built-in shipped to every installer of this package -- see
+  // the "Impromptu scenes" section of the top-level README.md for a
+  // royal-blue/white chase example built from sceneSpec.ts's palette+pattern
+  // primitives instead of a hand-written render() like the scenes above.
 ];
 
 export function findScene(id: string): Scene | undefined {

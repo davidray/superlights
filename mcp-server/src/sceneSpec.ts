@@ -62,6 +62,13 @@ export function buildSceneFromSpec(spec: SceneSpec): Scene {
   const direction = spec.direction ?? 1;
   const cycles = spec.bandWidth ? 1 / spec.bandWidth : undefined;
 
+  // Per-frame memo for "pulse": its color/brightness depend only on `t`, never on the
+  // per-LED ctx, but render() is called once per LED per frame (liveStreamController's
+  // tick loop invokes scene.render(p, t) with the SAME t for every LED in one frame).
+  // Cache the last {t, color} pair so repeat calls within a frame just reuse it instead
+  // of redoing the sin()/paletteAt() work per LED.
+  let pulseMemo: { t: number; color: RGB } | undefined;
+
   const render = (ctx: LedContext, t: number): RGB => {
     switch (spec.pattern) {
       case "solid":
@@ -91,11 +98,14 @@ export function buildSceneFromSpec(spec: SceneSpec): Scene {
       }
 
       case "pulse": {
+        if (pulseMemo && pulseMemo.t === t) return pulseMemo.color;
         const min = spec.brightnessMin ?? 0.25;
         const max = spec.brightnessMax ?? 1;
         const pulse = (Math.sin(t * speed * 1.1) + 1) / 2;
         const color = paletteAt(palette, t * speed * 0.05);
-        return scaleRgb(color, min + (max - min) * pulse);
+        const result = scaleRgb(color, min + (max - min) * pulse);
+        pulseMemo = { t, color: result };
+        return result;
       }
     }
   };

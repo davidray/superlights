@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluateSchedule, timeInRange, type HolidayScheduleConfig } from "./holidaySchedule.js";
+import {
+  evaluateSchedule,
+  timeInRange,
+  setLocation,
+  setDefaultSchedule,
+  upsertWindow,
+  upsertOverride,
+  type HolidayScheduleConfig,
+} from "./holidaySchedule.js";
 
 function config(partial: Partial<HolidayScheduleConfig> = {}): HolidayScheduleConfig {
   return {
@@ -111,4 +119,124 @@ test("timeInRange handles a range that crosses midnight", () => {
   assert.equal(timeInRange(now(23, 30), "22:00", "02:00"), true);
   assert.equal(timeInRange(now(1, 0), "22:00", "02:00"), true);
   assert.equal(timeInRange(now(10, 0), "22:00", "02:00"), false);
+});
+
+// --- Input validation on the write functions (issue #5: the trigger-server's HTTP
+// routes call these directly with raw JSON bodies, bypassing index.ts's zod schemas --
+// so these functions need to reject malformed data themselves, regardless of caller.
+// These only exercise the validation (which throws before any config file I/O), so
+// they don't touch disk.
+
+test("setLocation rejects an out-of-range latitude/longitude", () => {
+  assert.throws(() => setLocation({ latitude: 200, longitude: 0 }), /latitude/);
+  assert.throws(() => setLocation({ latitude: 0, longitude: -200 }), /longitude/);
+});
+
+test("setDefaultSchedule rejects a malformed onTime/offTime", () => {
+  assert.throws(
+    () => setDefaultSchedule({ onTime: "not-a-time", offTime: "22:00", device: "eaves", scene: "s", enabled: true }),
+    /onTime/
+  );
+  assert.throws(
+    () => setDefaultSchedule({ onTime: "08:00", offTime: "22:00", device: "", scene: "s", enabled: true }),
+    /device/
+  );
+});
+
+test("upsertWindow rejects a malformed seasonStart/seasonEnd", () => {
+  assert.throws(
+    () =>
+      upsertWindow({
+        id: "w",
+        name: "W",
+        seasonStart: "November 20",
+        seasonEnd: "01-05",
+        onTime: "08:00",
+        offTime: "22:00",
+        device: "eaves",
+        scene: "s",
+        enabled: true,
+      }),
+    /seasonStart/
+  );
+});
+
+test("upsertOverride rejects a malformed date-rule shape", () => {
+  assert.throws(
+    () =>
+      upsertOverride({
+        id: "bad-rule",
+        name: "Bad Rule",
+        date: "",
+        recurring: false,
+        rule: { type: "nthWeekday", month: 13, weekday: 4, n: 4 },
+        onTime: "08:00",
+        offTime: "22:00",
+        device: "eaves",
+        scene: "s",
+        enabled: true,
+      }),
+    /rule\.month/
+  );
+});
+
+test("upsertOverride rejects a one-time override whose date isn't YYYY-MM-DD", () => {
+  assert.throws(
+    () =>
+      upsertOverride({
+        id: "bad-date",
+        name: "Bad Date",
+        date: "09/05/2026",
+        recurring: false,
+        onTime: "08:00",
+        offTime: "22:00",
+        device: "eaves",
+        scene: "s",
+        enabled: true,
+      }),
+    /date/
+  );
+});
+
+test("upsertOverride rejects a recurring override whose date isn't MM-DD", () => {
+  assert.throws(
+    () =>
+      upsertOverride({
+        id: "bad-recurring-date",
+        name: "Bad Recurring Date",
+        date: "2026-05-08",
+        recurring: true,
+        onTime: "08:00",
+        offTime: "22:00",
+        device: "eaves",
+        scene: "s",
+        enabled: true,
+      }),
+    /date/
+  );
+});
+
+// Regression coverage for the scheduler bug (#6): evaluateSchedule can hand the
+// winning rule off from one device to a completely different one between two
+// consecutive evaluations -- e.g. an override that targets a different device than
+// the default schedule becoming active partway through the day. scheduler.ts's
+// tick() relies on comparing `rule.device` across ticks to know when it must
+// explicitly turn off the previously-active device (evaluateSchedule itself has no
+// notion of "previous" state, so it can't do this on its own -- it just reports
+// whichever single rule wins "right now").
+test("the winning rule's device can change between two evaluations, not just its scene", () => {
+  const c = config({
+    defaultSchedule: { onTime: "08:00", offTime: "22:00", device: "eaves", scene: "default-scene", enabled: true },
+    windows: [],
+    overrides: [
+      { id: "porch-event", name: "Porch Event", date: "07-04", recurring: true, onTime: "08:00", offTime: "22:00", device: "porch", scene: "fireworks", enabled: true },
+    ],
+  });
+
+  const before = evaluateSchedule(new Date("2026-07-03T12:00:00"), c);
+  assert.equal(before?.device, "eaves");
+
+  const after = evaluateSchedule(new Date("2026-07-04T12:00:00"), c);
+  assert.equal(after?.device, "porch");
+  assert.notEqual(before?.device, after?.device);
 });

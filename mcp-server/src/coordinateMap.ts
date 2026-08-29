@@ -1,9 +1,29 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CALIBRATION_DIR = process.env.WLED_CALIBRATION_DIR ?? join(__dirname, "..", "calibration");
+const RESOLVED_CALIBRATION_DIR = resolve(CALIBRATION_DIR);
+
+/**
+ * Builds the on-disk path for a device's calibration file, rejecting any device name
+ * that could escape the calibration directory (path traversal via "/", "\", ".."), or
+ * whose resolved path ends up outside it regardless. Applied here, at the point the
+ * device name is first accepted, so it's safe no matter which caller passes it through
+ * (including the trigger server's decoded URL path segment).
+ */
+function calibrationPath(device: string): string {
+  if (!device || typeof device !== "string" || device.includes("/") || device.includes("\\") || device.includes("..")) {
+    throw new Error(`Invalid device name "${device}": must not contain "/", "\\", or "..".`);
+  }
+  const path = join(CALIBRATION_DIR, `${device}.json`);
+  const resolvedPath = resolve(path);
+  if (resolvedPath !== RESOLVED_CALIBRATION_DIR && !resolvedPath.startsWith(RESOLVED_CALIBRATION_DIR + sep)) {
+    throw new Error(`Invalid device name "${device}": resolves outside the calibration directory.`);
+  }
+  return path;
+}
 
 export interface Waypoint {
   /** LED index within the run (local, matches the WLED segment's own indexing) */
@@ -44,7 +64,7 @@ export interface LedPosition {
 }
 
 export function loadCoordinateMap(device: string): CoordinateMap {
-  const path = join(CALIBRATION_DIR, `${device}.json`);
+  const path = calibrationPath(device);
   let raw: string;
   try {
     raw = readFileSync(path, "utf-8");
@@ -63,9 +83,33 @@ export function tryLoadCoordinateMap(device: string): CoordinateMap | null {
   }
 }
 
+/**
+ * Mirrors the bounds index.ts's set_calibration zod schema enforces (waypoints.min(1),
+ * x/y in 0-1), so a caller that bypasses the MCP layer's zod validation (e.g. the
+ * trigger server's HTTP route) can't write a malformed coordinate map.
+ */
+function validateCoordinateMap(map: CoordinateMap): void {
+  if (!map || typeof map !== "object") throw new Error("Coordinate map must be an object.");
+  if (!Array.isArray(map.runs) || map.runs.length === 0) {
+    throw new Error("Coordinate map must include at least one run.");
+  }
+  for (const run of map.runs) {
+    if (!Array.isArray(run.waypoints) || run.waypoints.length === 0) {
+      throw new Error(`Run "${run.id}" must include at least one waypoint.`);
+    }
+    for (const wp of run.waypoints) {
+      if (typeof wp.x !== "number" || wp.x < 0 || wp.x > 1 || typeof wp.y !== "number" || wp.y < 0 || wp.y > 1) {
+        throw new Error(`Run "${run.id}" has a waypoint with x/y outside the 0-1 range (got x=${wp.x}, y=${wp.y}).`);
+      }
+    }
+  }
+}
+
 export function saveCoordinateMap(device: string, map: CoordinateMap): void {
+  const path = calibrationPath(device);
+  validateCoordinateMap(map);
   mkdirSync(CALIBRATION_DIR, { recursive: true });
-  writeFileSync(join(CALIBRATION_DIR, `${device}.json`), JSON.stringify(map, null, 2));
+  writeFileSync(path, JSON.stringify(map, null, 2));
 }
 
 function interpolate(waypoints: Waypoint[], index: number): { x: number; y: number } {

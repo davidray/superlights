@@ -63,6 +63,42 @@ export interface HolidayScheduleConfig {
 
 const EMPTY_CONFIG: HolidayScheduleConfig = { location: null, defaultSchedule: null, windows: [], overrides: [] };
 
+// Mirrors the formats index.ts's zod schemas enforce for the equivalent MCP tools --
+// applied here too so triggerServer.ts's HTTP handlers (which write these objects
+// directly from raw JSON, bypassing that zod validation) can't persist malformed
+// schedule data.
+const TIME_VALUE_PATTERN = /^\d{2}:\d{2}$/;
+const MONTH_DAY_PATTERN = /^\d{2}-\d{2}$/;
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function assertNonEmptyString(value: unknown, field: string): void {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`"${field}" is required.`);
+  }
+}
+
+function assertTimeValue(value: TimeValue, field: string): void {
+  if (value !== "dusk" && value !== "dawn" && (typeof value !== "string" || !TIME_VALUE_PATTERN.test(value))) {
+    throw new Error(`Invalid ${field} "${value}": expected "HH:MM", "dusk", or "dawn".`);
+  }
+}
+
+function assertDateRule(rule: DateRule): void {
+  if (rule.type === "easter") return;
+  if (rule.type !== "nthWeekday") {
+    throw new Error(`Invalid rule type "${(rule as { type: string }).type}": expected "nthWeekday" or "easter".`);
+  }
+  if (!Number.isInteger(rule.month) || rule.month < 1 || rule.month > 12) {
+    throw new Error(`Invalid rule.month ${rule.month}: must be an integer 1-12.`);
+  }
+  if (!Number.isInteger(rule.weekday) || rule.weekday < 0 || rule.weekday > 6) {
+    throw new Error(`Invalid rule.weekday ${rule.weekday}: must be an integer 0-6 (0=Sunday).`);
+  }
+  if (!Number.isInteger(rule.n)) {
+    throw new Error(`Invalid rule.n ${rule.n}: must be an integer.`);
+  }
+}
+
 export function loadConfig(): HolidayScheduleConfig {
   if (!existsSync(CONFIG_PATH)) return { ...EMPTY_CONFIG };
   return { ...EMPTY_CONFIG, ...JSON.parse(readFileSync(CONFIG_PATH, "utf-8")) };
@@ -73,6 +109,12 @@ export function saveConfig(config: HolidayScheduleConfig): void {
 }
 
 export function setLocation(location: Location): HolidayScheduleConfig {
+  if (typeof location.latitude !== "number" || !Number.isFinite(location.latitude) || location.latitude < -90 || location.latitude > 90) {
+    throw new Error(`Invalid latitude ${location.latitude}: must be a number between -90 and 90.`);
+  }
+  if (typeof location.longitude !== "number" || !Number.isFinite(location.longitude) || location.longitude < -180 || location.longitude > 180) {
+    throw new Error(`Invalid longitude ${location.longitude}: must be a number between -180 and 180.`);
+  }
   const config = loadConfig();
   config.location = location;
   saveConfig(config);
@@ -80,6 +122,10 @@ export function setLocation(location: Location): HolidayScheduleConfig {
 }
 
 export function setDefaultSchedule(schedule: DefaultSchedule): HolidayScheduleConfig {
+  assertTimeValue(schedule.onTime, "onTime");
+  assertTimeValue(schedule.offTime, "offTime");
+  assertNonEmptyString(schedule.device, "device");
+  assertNonEmptyString(schedule.scene, "scene");
   const config = loadConfig();
   config.defaultSchedule = schedule;
   saveConfig(config);
@@ -87,6 +133,18 @@ export function setDefaultSchedule(schedule: DefaultSchedule): HolidayScheduleCo
 }
 
 export function upsertWindow(window: HolidayWindow): HolidayScheduleConfig {
+  assertNonEmptyString(window.id, "id");
+  assertNonEmptyString(window.name, "name");
+  if (typeof window.seasonStart !== "string" || !MONTH_DAY_PATTERN.test(window.seasonStart)) {
+    throw new Error(`Invalid seasonStart "${window.seasonStart}": expected "MM-DD".`);
+  }
+  if (typeof window.seasonEnd !== "string" || !MONTH_DAY_PATTERN.test(window.seasonEnd)) {
+    throw new Error(`Invalid seasonEnd "${window.seasonEnd}": expected "MM-DD".`);
+  }
+  assertTimeValue(window.onTime, "onTime");
+  assertTimeValue(window.offTime, "offTime");
+  assertNonEmptyString(window.device, "device");
+  assertNonEmptyString(window.scene, "scene");
   const config = loadConfig();
   const i = config.windows.findIndex((w) => w.id === window.id);
   if (i >= 0) config.windows[i] = window;
@@ -103,6 +161,23 @@ export function removeWindow(id: string): HolidayScheduleConfig {
 }
 
 export function upsertOverride(override: Override): HolidayScheduleConfig {
+  assertNonEmptyString(override.id, "id");
+  assertNonEmptyString(override.name, "name");
+  if (override.rule) {
+    assertDateRule(override.rule);
+  } else if (override.recurring) {
+    if (typeof override.date !== "string" || !MONTH_DAY_PATTERN.test(override.date)) {
+      throw new Error(`Invalid date "${override.date}": a recurring override needs "MM-DD".`);
+    }
+  } else {
+    if (typeof override.date !== "string" || !ISO_DATE_PATTERN.test(override.date)) {
+      throw new Error(`Invalid date "${override.date}": a one-time override needs "YYYY-MM-DD".`);
+    }
+  }
+  assertTimeValue(override.onTime, "onTime");
+  assertTimeValue(override.offTime, "offTime");
+  assertNonEmptyString(override.device, "device");
+  assertNonEmptyString(override.scene, "scene");
   const config = loadConfig();
   const i = config.overrides.findIndex((o) => o.id === override.id);
   if (i >= 0) config.overrides[i] = override;

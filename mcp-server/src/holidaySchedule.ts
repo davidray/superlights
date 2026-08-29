@@ -193,14 +193,8 @@ export function removeOverride(id: string): HolidayScheduleConfig {
   return config;
 }
 
-function monthDay(date: Date): string {
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${mm}-${dd}`;
-}
-
 function isoDate(date: Date): string {
-  return `${date.getFullYear()}-${monthDay(date)}`;
+  return `${date.getFullYear()}-${monthDayFromDate(date)}`;
 }
 
 /** Handles ranges that cross the new year (e.g. start=11-20, end=01-05). */
@@ -233,7 +227,7 @@ function resolve(rule: { onTime: TimeValue; offTime: TimeValue }, now: Date, loc
  * (no match in either tier, and no default schedule configured or enabled).
  */
 export function evaluateSchedule(now: Date, config: HolidayScheduleConfig): ActiveRule | null {
-  const today = monthDay(now);
+  const today = monthDayFromDate(now);
   const todayIso = isoDate(now);
   const location = config.location;
 

@@ -12,10 +12,45 @@ interface LiveStream {
   timer: ReturnType<typeof setInterval>;
   sender: DdpSender;
   stopTimeout?: ReturnType<typeof setTimeout>;
+  /** Set only for a caller-supplied durationSeconds > 20 (the deferred-stop case).
+   *  Watchdog-only bookkeeping: normal stops always happen via stopTimeout first --
+   *  this is purely a backstop for if that somehow never fires (a process/container
+   *  hiccup, an unhandled exception, etc.). Left unset for open-ended streams (no
+   *  duration given), which are meant to run until explicitly stopped. */
+  expectedStopAt?: number;
 }
 
 const liveStreams = new Map<string, LiveStream>();
 let nextStreamId = 1;
+
+const WATCHDOG_INTERVAL_MS = 30_000;
+// Tolerance for the primary stopTimeout's own scheduling jitter before the watchdog
+// treats a still-running stream as stuck rather than just running a little behind.
+const WATCHDOG_GRACE_MS = 30_000;
+
+/** True if a duration-bound stream is overdue to have stopped on its own, given the
+ *  current time and grace period. Pure and separately testable from the setInterval
+ *  loop that calls it against real wall-clock time. */
+export function isStreamOverdue(expectedStopAt: number | undefined, now: number, grace = WATCHDOG_GRACE_MS): boolean {
+  return expectedStopAt !== undefined && now > expectedStopAt + grace;
+}
+
+// unref'd so this alone never keeps a short-lived process (e.g. the test runner)
+// alive -- in the real server processes, the HTTP listener / stdio transport already
+// does that, and this still fires normally on schedule either way.
+setInterval(() => {
+  const now = Date.now();
+  for (const [device, stream] of liveStreams) {
+    if (isStreamOverdue(stream.expectedStopAt, now)) {
+      const overdueBy = ((now - stream.expectedStopAt!) / 1000).toFixed(0);
+      console.error(
+        `[liveStreamController] watchdog: stream for "${device}" is ${overdueBy}s past its expected stop time -- ` +
+          `force-stopping (the primary stopTimeout should have fired by now and didn't)`
+      );
+      stopStream(device);
+    }
+  }
+}, WATCHDOG_INTERVAL_MS).unref();
 
 /**
  * Whether THIS process currently has an active stream for `device`. Note that the
@@ -114,6 +149,7 @@ export async function playSceneLive(device: string, sceneOrSpec: string | SceneS
 
   if (durationSeconds !== undefined) {
     stream.stopTimeout = setTimeout(() => stopStreamIfCurrent(device, id), durationSeconds * 1000);
+    stream.expectedStopAt = Date.now() + durationSeconds * 1000;
   }
   return { scene, backgrounded: true };
 }

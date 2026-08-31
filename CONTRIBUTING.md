@@ -38,6 +38,11 @@ routes end-to-end, and real WLED hardware to see anything actually light up.
   `version` and the add-on is updated in Home Assistant (triggering a Docker
   rebuild). `index.ts` and `triggerServerClient.ts` are local-only — no
   version bump, just `npm run build`.
+- **Every version bump gets a `mcp-server/CHANGELOG.md` entry**, in the same
+  commit — a short bullet list of what changed, under a new `## X.Y.Z`
+  heading at the top. Home Assistant's Supervisor reads this file directly
+  and shows it in the add-on's Changelog tab, so it's the one piece of
+  documentation an installer actually sees before clicking Update.
 - A running Claude Code session's MCP tool definitions are a snapshot from
   when it connected. If you change a tool's schema or behavior, either start
   a fresh session to actually call it through the tools, or bypass that

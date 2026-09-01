@@ -58,12 +58,17 @@ export const scenes: Scene[] = [
     name: "Roofline Sparkle",
     description: "Random twinkle, weighted brighter near the roofline (low y) and dimmer toward the ground.",
     render: (ctx, t) => {
-      const frame = Math.floor(t * 8);
-      const twinkle = hash(ctx.deviceIndex, frame);
       const heightWeight = 1 - ctx.y;
-      const on = twinkle > 1 - 0.12 * heightWeight;
-      const b = on ? Math.round(255 * (0.6 + 0.4 * heightWeight)) : 0;
-      return [b, b, Math.min(255, b + 30)];
+      // Each LED runs its own sparkle clock (offset by a per-LED hash) so fades
+      // don't pulse in sync across the house.
+      const cycle = 1.2;
+      const local = t / cycle + hash(ctx.deviceIndex, 777);
+      const slot = Math.floor(local);
+      const density = 0.06 + 0.18 * heightWeight;
+      if (hash(ctx.deviceIndex, slot) > density) return [0, 0, 0];
+      const envelope = Math.sin((local - slot) * Math.PI);
+      const b = Math.round(128 * (0.6 + 0.4 * heightWeight) * envelope);
+      return [b, b, Math.min(255, b + Math.round(30 * envelope))];
     },
   },
   {

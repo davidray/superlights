@@ -56,12 +56,13 @@ export interface Location {
 
 export interface HolidayScheduleConfig {
   location: Location | null;
-  defaultSchedule: DefaultSchedule | null;
+  /** At most one per device — see setDefaultSchedule, which upserts by device. */
+  defaultSchedules: DefaultSchedule[];
   windows: HolidayWindow[];
   overrides: Override[];
 }
 
-const EMPTY_CONFIG: HolidayScheduleConfig = { location: null, defaultSchedule: null, windows: [], overrides: [] };
+const EMPTY_CONFIG: HolidayScheduleConfig = { location: null, defaultSchedules: [], windows: [], overrides: [] };
 
 // Mirrors the formats index.ts's zod schemas enforce for the equivalent MCP tools --
 // applied here too so triggerServer.ts's HTTP handlers (which write these objects
@@ -100,7 +101,14 @@ function assertDateRule(rule: DateRule): void {
 }
 
 export function loadConfig(): HolidayScheduleConfig {
-  return { ...EMPTY_CONFIG, ...readJsonFile<Partial<HolidayScheduleConfig>>(CONFIG_PATH) };
+  // `defaultSchedule` (singular, one object) is the pre-multi-device shape. A running
+  // add-on's persistent storage can still hold it, so migrate on read; the next
+  // saveConfig writes the array shape and the legacy key disappears.
+  const raw = readJsonFile<Partial<HolidayScheduleConfig> & { defaultSchedule?: DefaultSchedule | null }>(CONFIG_PATH) ?? {};
+  const { defaultSchedule: legacy, ...rest } = raw;
+  const config = { ...EMPTY_CONFIG, ...rest };
+  if (legacy && !raw.defaultSchedules?.length) config.defaultSchedules = [legacy];
+  return config;
 }
 
 export function saveConfig(config: HolidayScheduleConfig): void {
@@ -120,13 +128,23 @@ export function setLocation(location: Location): HolidayScheduleConfig {
   return config;
 }
 
+/** Upserts by device — each device gets at most one default schedule. */
 export function setDefaultSchedule(schedule: DefaultSchedule): HolidayScheduleConfig {
   assertTimeValue(schedule.onTime, "onTime");
   assertTimeValue(schedule.offTime, "offTime");
   assertNonEmptyString(schedule.device, "device");
   assertNonEmptyString(schedule.scene, "scene");
   const config = loadConfig();
-  config.defaultSchedule = schedule;
+  const i = config.defaultSchedules.findIndex((d) => d.device === schedule.device);
+  if (i >= 0) config.defaultSchedules[i] = schedule;
+  else config.defaultSchedules.push(schedule);
+  saveConfig(config);
+  return config;
+}
+
+export function removeDefaultSchedule(device: string): HolidayScheduleConfig {
+  const config = loadConfig();
+  config.defaultSchedules = config.defaultSchedules.filter((d) => d.device !== device);
   saveConfig(config);
   return config;
 }
@@ -221,17 +239,17 @@ function resolve(rule: { onTime: TimeValue; offTime: TimeValue }, now: Date, loc
 }
 
 /**
- * Priority: overrides > holiday windows > default schedule. First match in list order
- * wins within the override/window tiers. Returns null only if nothing applies at all
- * (no match in either tier, and no default schedule configured or enabled).
+ * The winning rule for one device. Priority: overrides > holiday windows > default
+ * schedule, considering only rules targeting `device`. First match in list order wins
+ * within the override/window tiers. Returns null if nothing applies for this device.
  */
-export function evaluateSchedule(now: Date, config: HolidayScheduleConfig): ActiveRule | null {
+export function evaluateScheduleForDevice(device: string, now: Date, config: HolidayScheduleConfig): ActiveRule | null {
   const today = monthDayFromDate(now);
   const todayIso = isoDate(now);
   const location = config.location;
 
   const activeOverride = config.overrides.find((o) => {
-    if (!o.enabled) return false;
+    if (!o.enabled || o.device !== device) return false;
     if (o.rule) return monthDayFromDate(resolveDateRule(o.rule, now.getFullYear())) === today;
     return o.recurring ? o.date === today : o.date === todayIso;
   });
@@ -239,17 +257,36 @@ export function evaluateSchedule(now: Date, config: HolidayScheduleConfig): Acti
     return { source: "override", id: activeOverride.id, name: activeOverride.name, device: activeOverride.device, scene: activeOverride.scene, ...resolve(activeOverride, now, location) };
   }
 
-  const activeWindow = config.windows.find((w) => w.enabled && monthDayInRange(today, w.seasonStart, w.seasonEnd));
+  const activeWindow = config.windows.find((w) => w.enabled && w.device === device && monthDayInRange(today, w.seasonStart, w.seasonEnd));
   if (activeWindow) {
     return { source: "window", id: activeWindow.id, name: activeWindow.name, device: activeWindow.device, scene: activeWindow.scene, ...resolve(activeWindow, now, location) };
   }
 
-  if (config.defaultSchedule?.enabled) {
-    const d = config.defaultSchedule;
+  const d = config.defaultSchedules.find((s) => s.enabled && s.device === device);
+  if (d) {
     return { source: "default", id: "default", name: "Default", device: d.device, scene: d.scene, ...resolve(d, now, location) };
   }
 
   return null;
+}
+
+/**
+ * The winning rule for every device that has one — devices schedule independently, so
+ * (unlike before multi-device support) a rule on one device never preempts another
+ * device's schedule. Empty if nothing applies anywhere.
+ */
+export function evaluateSchedule(now: Date, config: HolidayScheduleConfig): ActiveRule[] {
+  const devices = new Set<string>([
+    ...config.overrides.map((o) => o.device),
+    ...config.windows.map((w) => w.device),
+    ...config.defaultSchedules.map((d) => d.device),
+  ]);
+  const rules: ActiveRule[] = [];
+  for (const device of devices) {
+    const rule = evaluateScheduleForDevice(device, now, config);
+    if (rule) rules.push(rule);
+  }
+  return rules;
 }
 
 /** Whether the current clock time falls within [onTime, offTime), handling a window that crosses midnight. */

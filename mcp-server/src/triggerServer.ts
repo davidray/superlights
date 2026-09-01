@@ -12,6 +12,7 @@ import {
   removeOverride,
   setLocation,
   setDefaultSchedule,
+  removeDefaultSchedule,
   type HolidayWindow,
   type Override,
   type Location,
@@ -152,6 +153,9 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/schedule/default") {
       return send(res, 200, setDefaultSchedule(await readJson<DefaultSchedule>(req)));
+    }
+    if (req.method === "DELETE" && url.pathname.startsWith("/schedule/default/")) {
+      return send(res, 200, removeDefaultSchedule(decodeURIComponent(url.pathname.slice("/schedule/default/".length))));
     }
 
     if (req.method === "POST" && url.pathname === "/schedule/windows") {

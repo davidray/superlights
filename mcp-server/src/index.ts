@@ -67,7 +67,7 @@ server.registerPrompt(
 
    Important gotcha to mention if LED counts ever come up: WLED itself has its own configured total LED count and segment boundaries (visible via get_device_state), separate from this coordinate map -- both need to match and stay in sync, or some LEDs will silently never receive frames.
 
-3. **Schedule**: call list_schedule. If location is unset, ask for my latitude/longitude (or a city to estimate from) and call set_schedule_location. If there's no default schedule, ask what the lights should do on a normal day (e.g. "on at dusk, off at 10:15pm", which scene) and call set_default_schedule.
+3. **Schedule**: call list_schedule. If location is unset, ask for my latitude/longitude (or a city to estimate from) and call set_schedule_location. If there's no default schedule for this device (each device has its own, and they run independently), ask what its lights should do on a normal day (e.g. "on at dusk, off at 10:15pm", which scene) and call set_default_schedule.
 
 4. Once the basics work, mention (don't necessarily set up yet) that holiday windows, one-off overrides (birthdays, events), and ad-hoc scene specs (an inline palette + pattern for play_scene_live, for one-off requests like "a romantic scene in these colors" with no code change needed) are also available whenever I want them.
 
@@ -677,7 +677,8 @@ server.registerTool(
 // A small rules engine that runs entirely inside the always-on trigger server (see
 // scheduler.ts) -- no Home Assistant automations/helpers involved. Three priority
 // tiers, highest first: one-off overrides (special events), holiday windows
-// (recurring annual date ranges), default schedule (every other day). onTime/offTime
+// (recurring annual date ranges), default schedule (every other day). Rules are
+// evaluated per device, so each device schedules independently. onTime/offTime
 // accept "HH:MM" or the literal "dusk"/"dawn", resolved daily from the configured
 // location. Requires TRIGGER_SERVER_URL and TRIGGER_SERVER_TOKEN in mcp-server/.env.
 
@@ -726,7 +727,7 @@ const overrideShape = z.object({
 // list_schedule -- so callers can see the result of their change without a second round trip.
 const scheduleConfigOutputSchema = {
   location: scheduleLocation.nullable(),
-  defaultSchedule: defaultScheduleShape.nullable(),
+  defaultSchedules: z.array(defaultScheduleShape).describe("At most one per device"),
   windows: z.array(holidayWindowShape),
   overrides: z.array(overrideShape),
 };
@@ -760,7 +761,8 @@ server.registerTool(
   "set_default_schedule",
   {
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-    description: "Set the base everyday schedule (lowest priority — active whenever no holiday window or override applies).",
+    description:
+      "Set a device's base everyday schedule (lowest priority — active whenever no holiday window or override applies to that device). Upserts by device: each device has at most one, and devices schedule independently of each other.",
     inputSchema: {
       onTime: timeValue,
       offTime: timeValue,
@@ -772,6 +774,19 @@ server.registerTool(
   },
   withErrorHandling(async (schedule) => {
     return structured((await triggerServer.setDefaultSchedule(schedule)) as Record<string, unknown>);
+  })
+);
+
+server.registerTool(
+  "remove_default_schedule",
+  {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    description: "Remove a device's default everyday schedule (its holiday windows and overrides are untouched).",
+    inputSchema: { device: z.string() },
+    outputSchema: scheduleConfigOutputSchema,
+  },
+  withErrorHandling(async ({ device }) => {
+    return structured((await triggerServer.removeDefaultSchedule(device)) as Record<string, unknown>);
   })
 );
 

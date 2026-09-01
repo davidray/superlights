@@ -5,6 +5,20 @@ Versions here match `config.yaml`'s `version` — every bump is server-side code
 add-on rebuilds. Local-only changes (`index.ts`, `triggerServerClient.ts`)
 don't need a bump and aren't listed here.
 
+## 0.10.0
+
+- Schedule multiple devices independently. Rules were previously evaluated to a
+  single global winner, so at most one device could ever be on: a rule for one
+  device (e.g. a new lamp) would preempt another's schedule (e.g. the house)
+  and turn it off. Rules are now evaluated per device — each device gets its
+  own winner through the same three priority tiers, and the scheduler
+  reconciles every device each tick. `defaultSchedule` (one global) becomes
+  `defaultSchedules` (one per device, upserted by device); an existing config
+  file in the old shape is migrated automatically on first read. Adds
+  `remove_default_schedule` and `DELETE /schedule/default/<device>`. One
+  device failing to transition (unplugged, mid-reboot) no longer blocks the
+  others.
+
 ## 0.9.0
 
 - Fix `roofline-sparkle` rendering as a solid blue house: the blue-white tint

@@ -5,6 +5,14 @@ Versions here match `config.yaml`'s `version` — every bump is server-side code
 add-on rebuilds. Local-only changes (`index.ts`, `triggerServerClient.ts`)
 don't need a bump and aren't listed here.
 
+## 0.9.0
+
+- Fix `roofline-sparkle` rendering as a solid blue house: the blue-white tint
+  was applied to every LED (off pixels included), leaving a constant blue
+  floor. Off pixels are now true black, sparkles are about half as bright,
+  denser (with a base density so ground-level runs participate too), and fade
+  in/out on per-LED clocks instead of snapping at 8 fps.
+
 ## 0.8.0
 
 - Add a watchdog that force-stops any duration-bound live scene if it outlives

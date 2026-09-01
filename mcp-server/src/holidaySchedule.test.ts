@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   evaluateSchedule,
+  evaluateScheduleForDevice,
   timeInRange,
   setLocation,
   setDefaultSchedule,
@@ -13,7 +14,7 @@ import {
 function config(partial: Partial<HolidayScheduleConfig> = {}): HolidayScheduleConfig {
   return {
     location: null,
-    defaultSchedule: { onTime: "08:00", offTime: "22:00", device: "eaves", scene: "default-scene", enabled: true },
+    defaultSchedules: [{ onTime: "08:00", offTime: "22:00", device: "eaves", scene: "default-scene", enabled: true }],
     windows: [
       {
         id: "christmas",
@@ -47,20 +48,22 @@ function config(partial: Partial<HolidayScheduleConfig> = {}): HolidayScheduleCo
   };
 }
 
+const forEaves = (date: string, c = config()) => evaluateScheduleForDevice("eaves", new Date(date), c);
+
 test("default schedule wins when nothing else matches", () => {
-  const result = evaluateSchedule(new Date("2026-03-01T12:00:00"), config());
+  const result = forEaves("2026-03-01T12:00:00");
   assert.equal(result?.source, "default");
   assert.equal(result?.scene, "default-scene");
 });
 
 test("a holiday window beats the default schedule", () => {
-  const result = evaluateSchedule(new Date("2026-12-25T12:00:00"), config());
+  const result = forEaves("2026-12-25T12:00:00");
   assert.equal(result?.source, "window");
   assert.equal(result?.scene, "candy-cane-chase");
 });
 
 test("a holiday window wraps correctly across the year boundary", () => {
-  const result = evaluateSchedule(new Date("2027-01-02T12:00:00"), config());
+  const result = forEaves("2027-01-02T12:00:00");
   assert.equal(result?.source, "window");
   assert.equal(result?.id, "christmas");
 });
@@ -68,32 +71,32 @@ test("a holiday window wraps correctly across the year boundary", () => {
 test("an override beats a holiday window, even on a date inside the window", () => {
   const c = config();
   c.overrides.push({ id: "in-window", name: "Special", date: "12-25", recurring: true, onTime: "08:00", offTime: "22:00", device: "eaves", scene: "special-scene", enabled: true });
-  const result = evaluateSchedule(new Date("2026-12-25T12:00:00"), c);
+  const result = forEaves("2026-12-25T12:00:00", c);
   assert.equal(result?.source, "override");
   assert.equal(result?.scene, "special-scene");
 });
 
 test("a recurring MM-DD override matches every year", () => {
-  assert.equal(evaluateSchedule(new Date("2026-05-08T12:00:00"), config())?.id, "birthday");
-  assert.equal(evaluateSchedule(new Date("2030-05-08T12:00:00"), config())?.id, "birthday");
+  assert.equal(forEaves("2026-05-08T12:00:00")?.id, "birthday");
+  assert.equal(forEaves("2030-05-08T12:00:00")?.id, "birthday");
 });
 
 test("a one-time YYYY-MM-DD override only matches its exact year", () => {
-  assert.equal(evaluateSchedule(new Date("2026-09-05T12:00:00"), config())?.id, "game-2026");
-  assert.equal(evaluateSchedule(new Date("2027-09-05T12:00:00"), config())?.source, "default");
+  assert.equal(forEaves("2026-09-05T12:00:00")?.id, "game-2026");
+  assert.equal(forEaves("2027-09-05T12:00:00")?.source, "default");
 });
 
 test("a rule-based override recalculates per year, ignoring its date field", () => {
-  assert.equal(evaluateSchedule(new Date("2026-11-26T12:00:00"), config())?.id, "thanksgiving");
-  assert.equal(evaluateSchedule(new Date("2027-11-25T12:00:00"), config())?.id, "thanksgiving");
+  assert.equal(forEaves("2026-11-26T12:00:00")?.id, "thanksgiving");
+  assert.equal(forEaves("2027-11-25T12:00:00")?.id, "thanksgiving");
   // Nov 1 is safely outside both Thanksgiving and the Nov 20 - Jan 5 Christmas window.
-  assert.equal(evaluateSchedule(new Date("2026-11-01T12:00:00"), config())?.source, "default");
+  assert.equal(forEaves("2026-11-01T12:00:00")?.source, "default");
 });
 
 test("a disabled override is skipped entirely", () => {
   const c = config();
   c.overrides[0].enabled = false;
-  const result = evaluateSchedule(new Date("2026-05-08T12:00:00"), c);
+  const result = forEaves("2026-05-08T12:00:00", c);
   assert.equal(result?.source, "default");
 });
 
@@ -104,8 +107,65 @@ test("first match wins within a tier (list order)", () => {
       { id: "second", name: "Second", date: "07-04", recurring: true, onTime: "08:00", offTime: "22:00", device: "eaves", scene: "b", enabled: true },
     ],
   });
-  const result = evaluateSchedule(new Date("2026-07-04T12:00:00"), c);
+  const result = forEaves("2026-07-04T12:00:00", c);
   assert.equal(result?.id, "first");
+});
+
+// --- Multi-device evaluation: each device gets its own winning rule, independently.
+
+function twoDeviceConfig(): HolidayScheduleConfig {
+  return config({
+    defaultSchedules: [
+      { onTime: "08:00", offTime: "22:00", device: "eaves", scene: "default-scene", enabled: true },
+      { onTime: "17:00", offTime: "21:00", device: "dragon-lamp", scene: "dragon-fire", enabled: true },
+    ],
+    windows: [],
+    overrides: [],
+  });
+}
+
+test("evaluateSchedule returns a winning rule per device", () => {
+  const rules = evaluateSchedule(new Date("2026-03-01T12:00:00"), twoDeviceConfig());
+  assert.equal(rules.length, 2);
+  const byDevice = new Map(rules.map((r) => [r.device, r]));
+  assert.equal(byDevice.get("eaves")?.scene, "default-scene");
+  assert.equal(byDevice.get("dragon-lamp")?.scene, "dragon-fire");
+});
+
+test("an override on one device does not preempt another device's schedule", () => {
+  const c = twoDeviceConfig();
+  c.overrides.push({ id: "lamp-event", name: "Lamp Event", date: "07-04", recurring: true, onTime: "08:00", offTime: "22:00", device: "dragon-lamp", scene: "fireworks", enabled: true });
+  const rules = evaluateSchedule(new Date("2026-07-04T12:00:00"), c);
+  const byDevice = new Map(rules.map((r) => [r.device, r]));
+  assert.equal(byDevice.get("dragon-lamp")?.source, "override");
+  assert.equal(byDevice.get("dragon-lamp")?.scene, "fireworks");
+  // The eaves keep their own default rule -- the lamp's override is invisible to them.
+  assert.equal(byDevice.get("eaves")?.source, "default");
+});
+
+test("a window scoped to one device is ignored when evaluating another", () => {
+  const c = twoDeviceConfig();
+  c.windows.push({
+    id: "christmas",
+    name: "Christmas",
+    seasonStart: "11-20",
+    seasonEnd: "01-05",
+    onTime: "08:00",
+    offTime: "23:00",
+    device: "eaves",
+    scene: "candy-cane-chase",
+    enabled: true,
+  });
+  assert.equal(evaluateScheduleForDevice("eaves", new Date("2026-12-25T12:00:00"), c)?.source, "window");
+  assert.equal(evaluateScheduleForDevice("dragon-lamp", new Date("2026-12-25T12:00:00"), c)?.source, "default");
+});
+
+test("evaluateSchedule omits devices with nothing active", () => {
+  const c = twoDeviceConfig();
+  c.defaultSchedules[1].enabled = false;
+  const rules = evaluateSchedule(new Date("2026-03-01T12:00:00"), c);
+  assert.equal(rules.length, 1);
+  assert.equal(rules[0].device, "eaves");
 });
 
 test("timeInRange handles a normal same-day range", () => {
@@ -214,29 +274,4 @@ test("upsertOverride rejects a recurring override whose date isn't MM-DD", () =>
       }),
     /date/
   );
-});
-
-// Regression coverage for the scheduler bug (#6): evaluateSchedule can hand the
-// winning rule off from one device to a completely different one between two
-// consecutive evaluations -- e.g. an override that targets a different device than
-// the default schedule becoming active partway through the day. scheduler.ts's
-// tick() relies on comparing `rule.device` across ticks to know when it must
-// explicitly turn off the previously-active device (evaluateSchedule itself has no
-// notion of "previous" state, so it can't do this on its own -- it just reports
-// whichever single rule wins "right now").
-test("the winning rule's device can change between two evaluations, not just its scene", () => {
-  const c = config({
-    defaultSchedule: { onTime: "08:00", offTime: "22:00", device: "eaves", scene: "default-scene", enabled: true },
-    windows: [],
-    overrides: [
-      { id: "porch-event", name: "Porch Event", date: "07-04", recurring: true, onTime: "08:00", offTime: "22:00", device: "porch", scene: "fireworks", enabled: true },
-    ],
-  });
-
-  const before = evaluateSchedule(new Date("2026-07-03T12:00:00"), c);
-  assert.equal(before?.device, "eaves");
-
-  const after = evaluateSchedule(new Date("2026-07-04T12:00:00"), c);
-  assert.equal(after?.device, "porch");
-  assert.notEqual(before?.device, after?.device);
 });

@@ -38,6 +38,7 @@ export const triggerServer = {
   getSchedule: () => call("/schedule", { method: "GET" }),
   setLocation: (location: unknown) => call("/schedule/location", { method: "POST", body: JSON.stringify(location) }),
   setDefaultSchedule: (schedule: unknown) => call("/schedule/default", { method: "POST", body: JSON.stringify(schedule) }),
+  removeDefaultSchedule: (device: string) => call(`/schedule/default/${encodeURIComponent(device)}`, { method: "DELETE" }),
   upsertWindow: (window: unknown) => call("/schedule/windows", { method: "POST", body: JSON.stringify(window) }),
   removeWindow: (id: string) => call(`/schedule/windows/${encodeURIComponent(id)}`, { method: "DELETE" }),
   upsertOverride: (override: unknown) => call("/schedule/overrides", { method: "POST", body: JSON.stringify(override) }),

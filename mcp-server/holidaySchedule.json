@@ -1,6 +1,6 @@
 {
   "location": null,
-  "defaultSchedule": null,
+  "defaultSchedules": [],
   "windows": [],
   "overrides": []
 }

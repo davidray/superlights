@@ -5,6 +5,11 @@ Versions here match `config.yaml`'s `version` — every bump is server-side code
 add-on rebuilds. Local-only changes (`index.ts`, `triggerServerClient.ts`)
 don't need a bump and aren't listed here.
 
+## 0.10.1
+
+- Version-only bump, no functional change — HA's Supervisor wasn't picking up
+  the 0.10.0 update, so this nudges it to notice.
+
 ## 0.10.0
 
 - Schedule multiple devices independently. Rules were previously evaluated to a

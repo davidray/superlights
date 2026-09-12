@@ -80,10 +80,23 @@ strip. A device's coordinate map describes this as a list of *runs*
 `mcp-server/calibration/eaves.json` for a real worked example (this is one
 author's actual house, not a template — every layout is different).
 
-The practical process: flash a striped test pattern (e.g. via `set_raw_state`
-using the `i` per-LED field) so you can physically count LEDs per run, trace
-rough x/y positions from a photo of the house, and save the result with
-`set_calibration`. `get_calibration` reads it back.
+The practical process: call `identify_leds` on the device, recording video for
+its full `totalDurationSeconds` (it flashes each LED one at a time, bracketed
+by solid-white sync markers). Then call `annotate_led_capture` with that
+recording — it decodes the flash sequence and writes an annotated preview
+image with each detected LED labeled by index, so you can visually confirm
+the mapping. Pass `writeCandidateCalibration: true` to also get back a
+candidate coordinate map (measured positions, not hand-traced) that you can
+review and persist with `set_calibration`. `annotate_led_capture` requires
+`ffmpeg` on PATH (`brew install ffmpeg` on macOS; already included in the
+add-on's Docker image).
+
+Before this automated flow existed, the process was fully manual: flash a
+striped test pattern (e.g. via `set_raw_state` using the `i` per-LED field)
+to physically count LEDs per run, then trace rough x/y positions from a
+photo by hand — `calibration/eaves.json` is a real example of that older,
+approximate approach. `get_calibration` reads back whichever process
+produced it.
 
 **A real gotcha to know about going in:** WLED itself has its own configured
 total LED count and segment boundaries (visible via `get_device_state`),

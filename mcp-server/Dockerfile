@@ -1,6 +1,6 @@
 FROM ghcr.io/home-assistant/base:3.24
 
-RUN apk add --no-cache nodejs npm
+RUN apk add --no-cache nodejs npm ffmpeg
 
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./

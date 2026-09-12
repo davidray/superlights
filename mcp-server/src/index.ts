@@ -12,6 +12,8 @@ import * as actions from "./actions.js";
 import { clientFor } from "./actions.js";
 import { playSceneLive, stopStream } from "./liveStreamController.js";
 import { triggerServer } from "./triggerServerClient.js";
+import * as identifyPattern from "./identifyPattern.js";
+import * as photoAnnotate from "./photoAnnotate.js";
 
 const server = new McpServer({ name: "wled-lights", version: "0.1.0" });
 
@@ -63,7 +65,7 @@ server.registerPrompt(
 
 1. **Device**: call list_devices. If nothing is configured, or a host is still a "REPLACE_WITH..." placeholder, ask me for a name and the device's IP/hostname (I should have already flashed it with WLED -- if not, point me to https://kno.wled.ge/basics/getting-started/ first), then call add_device. Confirm it responds with get_device_state.
 
-2. **Calibration**: call get_calibration for the device. If it returns null, explain that custom scenes (list_scenes / play_scene_live) render against each LED's real physical position, described as one or more "runs" (physical sections, e.g. a roofline) with a few hand-placed x/y waypoints, linearly interpolated between them -- and that approximate is fine to start (see mcp-server/calibration/eaves.json for a real, admittedly-approximate example). Offer to flash a striped test pattern via set_raw_state's per-LED "i" field so I can physically count LEDs per run, then ask me to roughly describe or photograph the layout so you can estimate waypoints, and save the result with set_calibration.
+2. **Calibration**: call get_calibration for the device. If it returns null, explain that custom scenes (list_scenes / play_scene_live) render against each LED's real physical position, described as one or more "runs" (physical sections, e.g. a roofline) with a few hand-placed x/y waypoints, linearly interpolated between them -- and that approximate is fine to start (see mcp-server/calibration/eaves.json for a real, admittedly-approximate example). Offer to call identify_leds while I record a video (it flashes each LED one at a time with sync markers), then annotate_led_capture on that recording to get an annotated preview image and, with writeCandidateCalibration=true, a candidate coordinate map to review before saving with set_calibration. (annotate_led_capture needs ffmpeg on PATH.) If I'd rather not record video, fall back to flashing a striped test pattern via set_raw_state's per-LED "i" field so I can physically count LEDs per run, then ask me to roughly describe or photograph the layout so you can estimate waypoints by hand, and save the result with set_calibration.
 
    Important gotcha to mention if LED counts ever come up: WLED itself has its own configured total LED count and segment boundaries (visible via get_device_state), separate from this coordinate map -- both need to match and stay in sync, or some LEDs will silently never receive frames.
 
@@ -668,6 +670,94 @@ server.registerTool(
     } catch (err) {
       return structured({ ok: true, savedRemote: false, remoteError: (err as Error).message });
     }
+  })
+);
+
+// ---------------------------------------------------------------------------
+// LED identification
+//
+// Automates the "flash a test pattern, eyeball a photo, hand-type calibration"
+// workflow the README's Calibrate section otherwise describes as a manual process.
+// identify_leds flashes each LED on a device one at a time (bracketed by solid-white
+// sync markers) so a recorded video can be decoded frame-by-frame; annotate_led_capture
+// decodes that recording, without needing exact hand-trimming, into an annotated preview
+// image and (optionally) a candidate coordinate map for set_calibration to persist.
+// Both tools act on live hardware / a local file directly (like play_scene_live), not on
+// state the always-on trigger add-on needs to mirror, so neither goes through
+// triggerServerClient.ts/triggerServer.ts.
+
+server.registerTool(
+  "identify_leds",
+  {
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    description:
+      "Flash each LED on a device one at a time (all others off), bracketed by solid-white sync markers, for video-based LED identification -- the first step in building an accurate coordinate map (see get_calibration/set_calibration). Returns immediately once streaming starts (the sequence itself runs in the background for totalDurationSeconds); start recording video right when you call this -- the start marker gives a couple seconds of slack -- and record for the full duration. Pass the recording, plus these same timing values, to annotate_led_capture to decode it.",
+    inputSchema: {
+      device: z.string(),
+      holdMs: z.number().positive().default(250).describe("How long each LED stays lit, in ms"),
+      startMarkerMs: z.number().positive().default(2000).describe("Duration of the solid-white marker before the scan starts, in ms"),
+      endMarkerMs: z.number().positive().default(3000).describe("Duration of the solid-white marker after the scan ends, in ms"),
+      gapMs: z.number().positive().default(500).describe("Black settle time between each marker and the scan, in ms"),
+      fps: z.number().int().min(1).max(60).default(20).describe("DDP streaming rate"),
+    },
+    outputSchema: {
+      device: z.string(),
+      ledCount: z.number().int(),
+      holdMs: z.number(),
+      startMarkerMs: z.number(),
+      endMarkerMs: z.number(),
+      gapMs: z.number(),
+      fps: z.number(),
+      deviceIndexOrder: z.literal("deviceIndex 0..ledCount-1, flat DDP buffer order"),
+      totalDurationSeconds: z.number().describe("How long to record for"),
+    },
+  },
+  withErrorHandling(async ({ device, holdMs, startMarkerMs, endMarkerMs, gapMs, fps }) => {
+    const timing = await identifyPattern.streamIdentifyPattern(device, { holdMs, startMarkerMs, endMarkerMs, gapMs, fps });
+    return structured({ ...timing });
+  })
+);
+
+server.registerTool(
+  "annotate_led_capture",
+  {
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    description:
+      "Decode a video recording of an identify_leds run and produce an annotated PNG with each detected LED labeled by its index -- for visual confirmation, or to build a candidate coordinate map. Pass the same timing values identify_leds echoed back (defaults match if you didn't override them). Requires ffmpeg on PATH. Never writes calibration/<device>.json directly -- pass writeCandidateCalibration=true to get a candidate map back, then review it and call set_calibration yourself to persist it.",
+    inputSchema: {
+      device: z.string(),
+      filePath: z.string().describe("Path to the video recorded during identify_leds -- not an arbitrary photo; a single still can't capture a sequential flash"),
+      outputImagePath: z.string().describe("Where to write the annotated PNG"),
+      ledCount: z.number().int().positive().optional().describe("Defaults to the device's existing coordinate map's LED count, if any"),
+      holdMs: z.number().positive().default(250),
+      startMarkerMs: z.number().positive().default(2000),
+      endMarkerMs: z.number().positive().default(3000),
+      gapMs: z.number().positive().default(500),
+      writeCandidateCalibration: z.boolean().default(false),
+    },
+    outputSchema: {
+      annotatedImagePath: z.string(),
+      imageWidth: z.number().int(),
+      imageHeight: z.number().int(),
+      detections: z.array(
+        z.object({
+          deviceIndex: z.number().int(),
+          x: z.number().min(0).max(1),
+          y: z.number().min(0).max(1),
+          confidence: z.enum(["ok", "weak", "missing", "ambiguous"]).describe(
+            "ok=confident single blob; weak=dim/inconsistent across the LED's hold window; ambiguous=two comparably-bright blobs found (motion blur, a reflection); missing=nothing found"
+          ),
+        })
+      ),
+      missingCount: z.number().int(),
+      candidateCalibration: coordinateMap
+        .nullable()
+        .describe("Populated only when writeCandidateCalibration=true and an existing coordinate map's run boundaries were available to remap into. Review, then pass to set_calibration to persist."),
+    },
+  },
+  withErrorHandling(async (args) => {
+    const result = await photoAnnotate.annotateLedCapture(args);
+    return structured({ ...result });
   })
 );
 

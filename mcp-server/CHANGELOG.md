@@ -5,6 +5,15 @@ Versions here match `config.yaml`'s `version` — every bump is server-side code
 add-on rebuilds. Local-only changes (`index.ts`, `triggerServerClient.ts`)
 don't need a bump and aren't listed here.
 
+## 0.11.0
+
+- Let schedule rules (default schedule, holiday windows, overrides) take an
+  inline scene spec (palette + pattern) as their `scene`, not just a scene id.
+  Removing the `byu-game-day` built-in in 0.6.0 left every game-day override
+  pointing at a scene that no longer existed, so those days never turned the
+  lights on. Existing string scene ids keep working unchanged; raw JSON sent to
+  the `/schedule/*` routes is now validated against the scene-spec shape too.
+
 ## 0.10.1
 
 - Version-only bump, no functional change — HA's Supervisor wasn't picking up

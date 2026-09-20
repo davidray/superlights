@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { resolveTimeValue } from "./sunTimes.js";
 import { resolveDateRule, monthDayFromDate, type DateRule } from "./dateRules.js";
 import { readJsonFile, writeJsonFile } from "./jsonStore.js";
+import { assertSceneRef, type SceneRef } from "./sceneSpec.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = process.env.WLED_HOLIDAY_SCHEDULE_CONFIG ?? join(__dirname, "..", "holidaySchedule.json");
@@ -14,7 +15,8 @@ export interface DefaultSchedule {
   onTime: TimeValue;
   offTime: TimeValue;
   device: string;
-  scene: string;
+  /** A registered scene id, or an inline scene spec (palette + pattern). */
+  scene: SceneRef;
   enabled: boolean;
 }
 
@@ -27,7 +29,8 @@ export interface HolidayWindow {
   onTime: TimeValue;
   offTime: TimeValue;
   device: string;
-  scene: string;
+  /** A registered scene id, or an inline scene spec (palette + pattern). */
+  scene: SceneRef;
   enabled: boolean;
 }
 
@@ -45,7 +48,8 @@ export interface Override {
   onTime: TimeValue;
   offTime: TimeValue;
   device: string;
-  scene: string;
+  /** A registered scene id, or an inline scene spec (palette + pattern). */
+  scene: SceneRef;
   enabled: boolean;
 }
 
@@ -133,7 +137,7 @@ export function setDefaultSchedule(schedule: DefaultSchedule): HolidayScheduleCo
   assertTimeValue(schedule.onTime, "onTime");
   assertTimeValue(schedule.offTime, "offTime");
   assertNonEmptyString(schedule.device, "device");
-  assertNonEmptyString(schedule.scene, "scene");
+  assertSceneRef(schedule.scene);
   const config = loadConfig();
   const i = config.defaultSchedules.findIndex((d) => d.device === schedule.device);
   if (i >= 0) config.defaultSchedules[i] = schedule;
@@ -161,7 +165,7 @@ export function upsertWindow(window: HolidayWindow): HolidayScheduleConfig {
   assertTimeValue(window.onTime, "onTime");
   assertTimeValue(window.offTime, "offTime");
   assertNonEmptyString(window.device, "device");
-  assertNonEmptyString(window.scene, "scene");
+  assertSceneRef(window.scene);
   const config = loadConfig();
   const i = config.windows.findIndex((w) => w.id === window.id);
   if (i >= 0) config.windows[i] = window;
@@ -194,7 +198,7 @@ export function upsertOverride(override: Override): HolidayScheduleConfig {
   assertTimeValue(override.onTime, "onTime");
   assertTimeValue(override.offTime, "offTime");
   assertNonEmptyString(override.device, "device");
-  assertNonEmptyString(override.scene, "scene");
+  assertSceneRef(override.scene);
   const config = loadConfig();
   const i = config.overrides.findIndex((o) => o.id === override.id);
   if (i >= 0) config.overrides[i] = override;
@@ -228,7 +232,8 @@ export interface ActiveRule {
   onTime: string;
   offTime: string;
   device: string;
-  scene: string;
+  /** A registered scene id, or an inline scene spec (palette + pattern). */
+  scene: SceneRef;
 }
 
 function resolve(rule: { onTime: TimeValue; offTime: TimeValue }, now: Date, location: Location | null) {

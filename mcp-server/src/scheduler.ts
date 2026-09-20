@@ -1,6 +1,7 @@
 import { evaluateSchedule, timeInRange, loadConfig } from "./holidaySchedule.js";
 import { playSceneLive, stopStream } from "./liveStreamController.js";
 import * as actions from "./actions.js";
+import { sceneLabel, type SceneRef } from "./sceneSpec.js";
 
 // Runs inside the always-on trigger server. Every tick: figure out which rule (if
 // any) applies today for each device -- overrides beat holiday windows beat the
@@ -9,7 +10,8 @@ import * as actions from "./actions.js";
 // be on or off per its onTime/offTime, then fire a transition only where that differs
 // from what we last applied. Scenes always refer to custom scenes (scenes.ts),
 // streamed live via DDP, not WLED presets/effects -- this scheduler is scoped to
-// that one job.
+// that one job. A rule's scene is either a registered scene id or an inline scene
+// spec (palette + pattern), so a one-off look never needs a scenes.ts entry.
 
 const TICK_MS = 30_000;
 
@@ -20,7 +22,7 @@ interface AppliedState {
 
 const lastApplied = new Map<string, AppliedState>();
 
-async function applyOn(device: string, scene: string): Promise<void> {
+async function applyOn(device: string, scene: SceneRef): Promise<void> {
   await playSceneLive(device, scene, {});
 }
 
@@ -55,7 +57,7 @@ async function tick(): Promise<void> {
 
     try {
       if (shouldBeOn) {
-        console.error(`[scheduler] applying "${rule.name}" (${rule.source}) -> scene "${rule.scene}" on ${device}`);
+        console.error(`[scheduler] applying "${rule.name}" (${rule.source}) -> scene "${sceneLabel(rule.scene)}" on ${device}`);
         await applyOn(device, rule.scene);
       } else {
         console.error(`[scheduler] "${rule.name}" (${rule.source}) off period -> powering off ${device}`);

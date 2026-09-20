@@ -260,3 +260,54 @@ export function buildSceneFromSpec(spec: SceneSpec): Scene {
 
   return { id: "custom", name: spec.name ?? "Custom Scene", description: "Ad-hoc scene composed from an inline spec.", render };
 }
+
+/** Either a registered scene id (see scenes.ts) or an inline spec. */
+export type SceneRef = string | SceneSpec;
+
+const SCENE_PATTERNS: readonly ScenePattern[] = ["solid", "wave", "chase", "twinkle", "pulse", "gradientDrift", "fireworks", "comet", "rain", "bounce", "aurora", "strobe"];
+
+function assertOptionalNumber(value: unknown, field: string, { min, max, positive }: { min?: number; max?: number; positive?: boolean } = {}): void {
+  if (value === undefined) return;
+  if (typeof value !== "number" || !Number.isFinite(value) || (positive && value <= 0) || (min !== undefined && value < min) || (max !== undefined && value > max)) {
+    throw new Error(`Invalid scene ${field} ${JSON.stringify(value)}.`);
+  }
+}
+
+/**
+ * Mirrors the zod sceneSpec in index.ts, for callers that receive raw JSON without going
+ * through it (triggerServer.ts's HTTP routes, a hand-edited holidaySchedule.json).
+ */
+export function assertSceneRef(scene: unknown, field = "scene"): asserts scene is SceneRef {
+  if (typeof scene === "string") {
+    if (scene.trim() === "") throw new Error(`"${field}" is required.`);
+    return;
+  }
+  if (typeof scene !== "object" || scene === null || Array.isArray(scene)) {
+    throw new Error(`"${field}" must be a scene id or an inline scene spec.`);
+  }
+  const spec = scene as Record<string, unknown>;
+  if (!SCENE_PATTERNS.includes(spec.pattern as ScenePattern)) {
+    throw new Error(`Invalid ${field}.pattern ${JSON.stringify(spec.pattern)}: expected one of ${SCENE_PATTERNS.join(", ")}.`);
+  }
+  const palette = spec.palette;
+  if (!Array.isArray(palette) || palette.length < 1 || palette.length > 8) {
+    throw new Error(`Invalid ${field}.palette: expected 1-8 [r,g,b] colors.`);
+  }
+  for (const color of palette) {
+    if (!Array.isArray(color) || color.length !== 3 || !color.every((c) => Number.isInteger(c) && c >= 0 && c <= 255)) {
+      throw new Error(`Invalid ${field}.palette color ${JSON.stringify(color)}: expected [r,g,b] integers 0-255.`);
+    }
+  }
+  if (spec.name !== undefined && typeof spec.name !== "string") throw new Error(`Invalid ${field}.name: must be a string.`);
+  if (spec.direction !== undefined && spec.direction !== 1 && spec.direction !== -1) throw new Error(`Invalid ${field}.direction: must be 1 or -1.`);
+  assertOptionalNumber(spec.speed, `${field}.speed`, { positive: true });
+  assertOptionalNumber(spec.bandWidth, `${field}.bandWidth`, { positive: true });
+  assertOptionalNumber(spec.sparkleDensity, `${field}.sparkleDensity`, { min: 0, max: 1 });
+  assertOptionalNumber(spec.brightnessMin, `${field}.brightnessMin`, { min: 0, max: 1 });
+  assertOptionalNumber(spec.brightnessMax, `${field}.brightnessMax`, { min: 0, max: 1 });
+}
+
+/** Short label for logs and status messages. */
+export function sceneLabel(scene: SceneRef): string {
+  return typeof scene === "string" ? scene : (scene.name ?? "inline scene");
+}

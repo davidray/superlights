@@ -548,6 +548,9 @@ const sceneSpec = z.object({
   brightnessMax: z.number().min(0).max(1).optional().describe("Brightness ceiling for pulse's/fireworks' fade range, aurora's shimmer range, or rain's overall intensity"),
 });
 
+// Schedule rules take the same thing play_scene_live does: a registered scene id or an inline spec.
+const sceneRef = z.union([z.string().describe("Scene id from list_scenes"), sceneSpec]).describe("A registered scene id, or an inline scene spec (palette + pattern)");
+
 server.registerTool(
   "play_scene_live",
   {
@@ -556,7 +559,7 @@ server.registerTool(
       "Stream a scene to real WLED hardware in realtime over DDP, bypassing WLED's own effect engine so the scene can use physical LED position. Requires a coordinate map for the device (calibration/<device>.json). Pass either a scene id from list_scenes, or an inline spec (palette + pattern) to compose a one-off scene on the fly — e.g. for a spontaneous request like 'a romantic scene in these colors' — with no code change or release needed. Calls of 20s or less finish before returning; longer or open-ended runs start in the background — use stop_live to cancel those.",
     inputSchema: {
       device: z.string(),
-      scene: z.union([z.string().describe("Scene id from list_scenes"), sceneSpec]).describe("A registered scene id, or an inline scene spec"),
+      scene: sceneRef,
       durationSeconds: z.number().positive().optional().describe("Omit to run until stop_live is called"),
       fps: z.number().int().min(1).max(60).default(30),
     },
@@ -788,7 +791,7 @@ const dateRule = z.union([
 // object shapes list_schedule actually returns (one holistic read of the config the
 // scheduler in scheduler.ts evaluates against).
 const scheduleLocation = z.object({ latitude: z.number(), longitude: z.number() });
-const defaultScheduleShape = z.object({ onTime: timeValue, offTime: timeValue, device: z.string(), scene: z.string(), enabled: z.boolean() });
+const defaultScheduleShape = z.object({ onTime: timeValue, offTime: timeValue, device: z.string(), scene: sceneRef, enabled: z.boolean() });
 const holidayWindowShape = z.object({
   id: z.string(),
   name: z.string(),
@@ -797,7 +800,7 @@ const holidayWindowShape = z.object({
   onTime: timeValue,
   offTime: timeValue,
   device: z.string(),
-  scene: z.string(),
+  scene: sceneRef,
   enabled: z.boolean(),
 });
 const overrideShape = z.object({
@@ -809,7 +812,7 @@ const overrideShape = z.object({
   onTime: timeValue,
   offTime: timeValue,
   device: z.string(),
-  scene: z.string(),
+  scene: sceneRef,
   enabled: z.boolean(),
 });
 
@@ -857,7 +860,7 @@ server.registerTool(
       onTime: timeValue,
       offTime: timeValue,
       device: z.string(),
-      scene: z.string().describe("Name of a custom scene (see list_scenes) to stream live"),
+      scene: sceneRef.describe("Scene id (see list_scenes) or inline scene spec to stream live"),
       enabled: z.boolean().default(true),
     },
     outputSchema: scheduleConfigOutputSchema,
@@ -893,7 +896,7 @@ server.registerTool(
       onTime: timeValue,
       offTime: timeValue,
       device: z.string(),
-      scene: z.string(),
+      scene: sceneRef,
       enabled: z.boolean().default(true),
     },
     outputSchema: scheduleConfigOutputSchema,
@@ -931,7 +934,7 @@ server.registerTool(
       onTime: timeValue,
       offTime: timeValue,
       device: z.string(),
-      scene: z.string(),
+      scene: sceneRef,
       enabled: z.boolean().default(true),
     },
     outputSchema: scheduleConfigOutputSchema,

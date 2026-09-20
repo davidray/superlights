@@ -275,3 +275,25 @@ test("upsertOverride rejects a recurring override whose date isn't MM-DD", () =>
     /date/
   );
 });
+
+test("a rule can carry an inline scene spec instead of a scene id", () => {
+  const spec = { name: "Game Day", palette: [[0, 46, 93], [255, 255, 255]] as [number, number, number][], pattern: "chase" as const, bandWidth: 0.125, speed: 0.17 };
+  const c = config();
+  c.overrides.push({ id: "game-inline", name: "Inline Game", date: "2026-10-03", recurring: false, onTime: "08:00", offTime: "22:00", device: "eaves", scene: spec, enabled: true });
+  const result = forEaves("2026-10-03T12:00:00", c);
+  assert.equal(result?.id, "game-inline");
+  assert.deepEqual(result?.scene, spec);
+});
+
+test("upsertOverride rejects a malformed inline scene spec", () => {
+  const base = { id: "bad-scene", name: "Bad Scene", date: "2026-10-03", recurring: false, onTime: "08:00", offTime: "22:00", device: "eaves", enabled: true };
+  assert.throws(() => upsertOverride({ ...base, scene: { palette: [[0, 0, 0]], pattern: "nope" } as never }), /pattern/);
+  assert.throws(() => upsertOverride({ ...base, scene: { palette: [], pattern: "chase" } as never }), /palette/);
+});
+
+test("upsertOverride rejects an empty scene id", () => {
+  assert.throws(
+    () => upsertOverride({ id: "x", name: "X", date: "2026-10-03", recurring: false, onTime: "08:00", offTime: "22:00", device: "eaves", scene: " ", enabled: true }),
+    /"scene" is required/
+  );
+});

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSceneFromSpec } from "./sceneSpec.js";
+import { buildSceneFromSpec, assertSceneRef, sceneLabel } from "./sceneSpec.js";
 import type { LedContext } from "./scenes.js";
 
 function ctxAt(x: number, deviceIndex = 0, y = 0.5): LedContext {
@@ -130,4 +130,25 @@ test("strobe alternates between a dark floor and bright flashes, synchronized ac
   }
   assert.ok(sawFlash, "expected at least one bright flash");
   assert.ok(sawFloor, "expected a dark floor between flashes");
+});
+
+test("assertSceneRef accepts a scene id and a well-formed spec", () => {
+  assert.doesNotThrow(() => assertSceneRef("patriotic-wave"));
+  assert.doesNotThrow(() => assertSceneRef({ name: "Game Day", palette: [[0, 46, 93], [255, 255, 255]], pattern: "chase", bandWidth: 0.125, speed: 0.17, direction: -1 }));
+});
+
+test("assertSceneRef rejects malformed specs", () => {
+  assert.throws(() => assertSceneRef(""), /required/);
+  assert.throws(() => assertSceneRef(42), /scene id or an inline scene spec/);
+  assert.throws(() => assertSceneRef({ palette: [[0, 0, 0]], pattern: "nope" }), /pattern/);
+  assert.throws(() => assertSceneRef({ palette: [[0, 0, 300]], pattern: "solid" }), /palette color/);
+  assert.throws(() => assertSceneRef({ palette: Array(9).fill([0, 0, 0]), pattern: "solid" }), /palette/);
+  assert.throws(() => assertSceneRef({ palette: [[0, 0, 0]], pattern: "solid", speed: 0 }), /speed/);
+  assert.throws(() => assertSceneRef({ palette: [[0, 0, 0]], pattern: "solid", direction: 2 }), /direction/);
+});
+
+test("sceneLabel names an id, a named spec, and an unnamed spec", () => {
+  assert.equal(sceneLabel("halloween-flicker"), "halloween-flicker");
+  assert.equal(sceneLabel({ name: "Game Day", palette: [[0, 0, 0]], pattern: "solid" }), "Game Day");
+  assert.equal(sceneLabel({ palette: [[0, 0, 0]], pattern: "solid" }), "inline scene");
 });

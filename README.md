@@ -170,6 +170,10 @@ Swap in your own team's/school's colors and tune `bandWidth` (band count)
 and `speed` (chase rate) to taste, then pass this as `scene` to
 `play_scene_live` in place of a scene `id`.
 
+The same spec works as the `scene` of a schedule rule (`set_default_schedule`,
+`add_holiday_window`, `add_override`), so a recurring or scheduled one-off —
+say, every game day — can use it without a `scenes.ts` entry either.
+
 ## Security note
 
 The add-on runs with `host_network: true`, binding its HTTP server directly

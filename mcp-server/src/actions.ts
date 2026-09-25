@@ -20,6 +20,12 @@ export async function setPower(device: string, on: boolean | "toggle"): Promise<
   await clientFor(device).postState({ on: on === "toggle" ? "t" : on });
 }
 
+/** Whether the device currently reports itself powered on. */
+export async function getPower(device: string): Promise<boolean> {
+  const state = await clientFor(device).getState();
+  return state.on === true;
+}
+
 export async function setBrightness(device: string, brightness: number): Promise<void> {
   assertInRange(brightness, 1, 255, "brightness");
   await clientFor(device).postState({ bri: brightness });

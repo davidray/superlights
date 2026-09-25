@@ -5,6 +5,17 @@ Versions here match `config.yaml`'s `version` — every bump is server-side code
 add-on rebuilds. Local-only changes (`index.ts`, `triggerServerClient.ts`)
 don't need a bump and aren't listed here.
 
+## 0.12.0
+
+- The scheduler now re-asserts the state it last applied instead of only firing
+  on transitions. It used to power a device off at its offTime and then never
+  look at it again until the next rule change, so a WLED controller that
+  rebooted overnight (and came up lit by its own power-on default) or was
+  switched on from the WLED app stayed on until dusk. Each tick it reads the
+  device's power state and, only if it disagrees with the rule -- or the live
+  stream has gone away during the on period -- re-sends the transition. An
+  unreachable device is skipped and retried next tick.
+
 ## 0.11.0
 
 - Let schedule rules (default schedule, holiday windows, overrides) take an

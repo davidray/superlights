@@ -5,6 +5,22 @@ Versions here match `config.yaml`'s `version` — every bump is server-side code
 add-on rebuilds. Local-only changes (`index.ts`, `triggerServerClient.ts`)
 don't need a bump and aren't listed here.
 
+## 0.13.0
+
+- Five new scene-spec patterns modeled on effects that arrived in WLED 16:
+  `shimmer` (Shimmer), `clouds` (Color Clouds), `dancingShadows` (PS Dancing
+  Shadows), `fireworks1d` (PS Fireworks 1D / Starburst) and `lavaLamp` (Lava
+  Lamp / Magma). They're reimplemented here against each LED's physical
+  position and streamed over DDP like every other scene, so they don't depend
+  on the controller's firmware.
+- Six built-in scenes now use them (scene ids are unchanged, so existing
+  schedules pick up the new looks automatically):
+  - `st-patricks-shimmer`: green shimmer with gliding highlights.
+  - `new-years-sparkle`: gold and white fireworks bursting along the roofline.
+  - `valentines-glow`: red and pink lava-lamp blobs.
+  - `halloween-flicker`: orange and purple dancing shadows, still flickering.
+  - `autumn-harvest` and `easter-pastels`: drifting color clouds.
+
 ## 0.12.0
 
 - The scheduler now re-asserts the state it last applied instead of only firing

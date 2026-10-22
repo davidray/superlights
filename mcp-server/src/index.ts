@@ -529,23 +529,25 @@ const rgbChannel = z.number().int().min(0).max(255);
 const sceneSpec = z.object({
   name: z.string().optional().describe("Human-readable label for status messages, e.g. 'Date Night'"),
   palette: z.array(z.tuple([rgbChannel, rgbChannel, rgbChannel])).min(1).max(8).describe("1-8 colors as [r,g,b] triples"),
-  pattern: z.enum(["solid", "wave", "chase", "twinkle", "pulse", "gradientDrift", "fireworks", "comet", "rain", "bounce", "aurora", "strobe"]).describe(
+  pattern: z.enum(["solid", "wave", "chase", "twinkle", "pulse", "gradientDrift", "fireworks", "comet", "rain", "bounce", "aurora", "strobe", "shimmer", "clouds", "dancingShadows", "fireworks1d", "lavaLamp"]).describe(
     "solid=static color; wave/gradientDrift=smooth drift through the palette (gradientDrift is slower, single-sweep); chase=hard-edged bands cycling through the palette; twinkle=random sparkle over a dim background; pulse=whole-house brightness breathing over a slowly-cycling base color; " +
       "fireworks=bursts of expanding rings from random points, each a random palette color, weighted toward the roofline; comet=a bright point with a fading trail looping across the house, cycling palette colors each lap; rain=droplets falling top-to-bottom in independent columns, one palette color per column; " +
-      "bounce=1-3 palette-colored dots bouncing back and forth; aurora=a slow, organic 2-axis color flow with shimmer, like the northern lights; strobe=whole-house synchronized flashes at irregular intervals, lightning-style"
+      "bounce=1-3 palette-colored dots bouncing back and forth; aurora=a slow, organic 2-axis color flow with shimmer, like the northern lights; strobe=whole-house synchronized flashes at irregular intervals, lightning-style; " +
+      "shimmer=soft highlights gliding across a dim, gently-breathing palette base, like light on satin; clouds=soft blobs of palette color drifting and morphing; dancingShadows=overlapping soft beams (one per palette color, 3-6 total) sliding back and forth, leaving moving pools of shadow; " +
+      "fireworks1d=rockets streaking along the roofline and bursting into crackling sparks that fly outward both ways, each burst a random palette color; lavaLamp=slow blobs that wander, swell and merge, ramping from the first palette color at their edges to the last at their cores"
   ),
   speed: z.number().positive().optional().describe("Tempo multiplier, default 1"),
   bandWidth: z.number().positive().optional().describe(
-    "Fraction of the house per repeating band for wave/chase/aurora (smaller = more bands); also reused as fireworks' ring thickness, comet's trail length, rain's column width, or bounce's dot size (smaller = thinner/narrower)"
+    "Fraction of the house per repeating band for wave/chase/aurora (smaller = more bands); also reused as fireworks' ring thickness, comet's trail length, rain's column width, bounce's dot size, shimmer's glint width, clouds' cloud size, dancingShadows' beam width, fireworks1d's spark size, or lavaLamp's blob size (smaller = thinner/narrower)"
   ),
   direction: z.union([z.literal(1), z.literal(-1)]).optional(),
   sparkleDensity: z.number().min(0).max(1).optional().describe(
-    "Fraction of LEDs lit at once, for twinkle (default 0.12); also reused as fireworks' spark-texture density within a burst ring, or strobe's per-slot flash probability (default 0.35)"
+    "Fraction of LEDs lit at once, for twinkle (default 0.12); also reused as fireworks' spark-texture density within a burst ring, strobe's per-slot flash probability (default 0.35), or fireworks1d's sparks per burst (default 0.5)"
   ),
   brightnessMin: z.number().min(0).max(1).optional().describe(
-    "Brightness floor for twinkle's background, pulse's/fireworks' fade range, aurora's shimmer range, or strobe's between-flash floor"
+    "Brightness floor for twinkle's background, pulse's/fireworks' fade range, aurora's shimmer range, strobe's between-flash floor, shimmer's base brightness, clouds' dimmest point, or the background glow behind dancingShadows/fireworks1d/lavaLamp"
   ),
-  brightnessMax: z.number().min(0).max(1).optional().describe("Brightness ceiling for pulse's/fireworks' fade range, aurora's shimmer range, or rain's overall intensity"),
+  brightnessMax: z.number().min(0).max(1).optional().describe("Brightness ceiling for pulse's/fireworks' fade range, aurora's shimmer range, rain's overall intensity, shimmer's glint peak, or clouds' brightest point"),
 });
 
 // Schedule rules take the same thing play_scene_live does: a registered scene id or an inline spec.

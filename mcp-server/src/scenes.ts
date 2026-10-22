@@ -1,3 +1,5 @@
+import { buildSceneFromSpec, type SceneSpec } from "./sceneSpec.js";
+
 export type RGB = [number, number, number];
 
 export interface LedContext {
@@ -31,6 +33,13 @@ function hslToRgb(h: number, s: number, l: number): RGB {
 export function hash(a: number, b: number): number {
   const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
   return s - Math.floor(s);
+}
+
+/** A built-in scene's render() backed by a sceneSpec pattern. Built on first use rather
+ *  than at module load, since sceneSpec.ts imports `hash` back from this module. */
+function fromSpec(spec: SceneSpec): Scene["render"] {
+  let render: Scene["render"] | undefined;
+  return (ctx, t) => (render ??= buildSceneFromSpec(spec).render)(ctx, t);
 }
 
 export const scenes: Scene[] = [
@@ -92,33 +101,20 @@ export const scenes: Scene[] = [
   {
     id: "new-years-sparkle",
     name: "New Year's Sparkle",
-    description: "Bright gold and white twinkle over a dim warm base — countdown energy for New Year's Eve.",
-    render: (ctx, t) => {
-      const frame = Math.floor(t * 7);
-      const twinkle = hash(ctx.deviceIndex, frame);
-      if (twinkle <= 0.7) return [40, 30, 10];
-      return hash(ctx.deviceIndex, frame + 500) > 0.5 ? [255, 215, 90] : [255, 255, 240];
-    },
+    description: "Gold and white fireworks bursting along the roofline over a dim warm base, each rocket streaking in and exploding into crackling sparks (after WLED 16's PS Fireworks 1D) — countdown energy for New Year's Eve.",
+    render: fromSpec({ palette: [[255, 200, 70], [255, 255, 240], [255, 160, 40]], pattern: "fireworks1d", speed: 1.1, sparkleDensity: 0.6, brightnessMin: 0.15 }),
   },
   {
     id: "valentines-glow",
     name: "Valentine's Glow",
-    description: "Soft pulsing red and pink across the house.",
-    render: (ctx, t) => {
-      const pulse = (Math.sin(t * 1.2 + ctx.x * 2) + 1) / 2;
-      const hue = (340 + ctx.x * 10) / 360;
-      return hslToRgb(hue, 0.75, 0.35 + pulse * 0.25);
-    },
+    description: "Slow, glowing blobs of deep red and pink that wander, swell, and merge along the house (after WLED 16's Lava Lamp).",
+    render: fromSpec({ palette: [[90, 0, 20], [200, 20, 60], [255, 110, 160]], pattern: "lavaLamp", speed: 0.8, brightnessMin: 0.12 }),
   },
   {
     id: "st-patricks-shimmer",
     name: "St. Patrick's Shimmer",
-    description: "Shades of green shimmering across the house.",
-    render: (ctx, t) => {
-      const phase = ctx.x * 3 - t * 0.5;
-      const hue = (100 + 30 * Math.sin(phase * Math.PI * 2)) / 360;
-      return hslToRgb(hue, 0.7, 0.45);
-    },
+    description: "Shades of green with soft highlights gliding across the house, like light catching satin (after WLED 16's Shimmer).",
+    render: fromSpec({ palette: [[0, 140, 40], [60, 200, 60], [0, 100, 60]], pattern: "shimmer", speed: 0.9, brightnessMin: 0.4 }),
   },
   {
     id: "patriotic-wave",
@@ -135,32 +131,23 @@ export const scenes: Scene[] = [
   {
     id: "halloween-flicker",
     name: "Halloween Flicker",
-    description: "Flickering orange and purple with occasional dark pulses — spooky for Halloween season.",
-    render: (ctx, t) => {
-      const frame = Math.floor(t * 10);
-      if (hash(ctx.deviceIndex, frame) < 0.08) return [0, 0, 0];
-      return hash(ctx.deviceIndex, Math.floor(t * 0.5)) > 0.5 ? [255, 100, 0] : [110, 20, 160];
-    },
+    description: "Orange and purple lantern beams sweeping back and forth, leaving moving pools of shadow (after WLED 16's PS Dancing Shadows), with occasional dark flickers — spooky for Halloween season.",
+    render: (() => {
+      const shadows = fromSpec({ palette: [[255, 100, 0], [110, 20, 160]], pattern: "dancingShadows", speed: 0.9, bandWidth: 0.09, brightnessMin: 0.06 });
+      return (ctx: LedContext, t: number): RGB => (hash(ctx.deviceIndex, Math.floor(t * 10)) < 0.05 ? [0, 0, 0] : shadows(ctx, t));
+    })(),
   },
   {
     id: "autumn-harvest",
     name: "Autumn Harvest",
-    description: "Warm oranges, browns, and gold drifting across the house — for Thanksgiving.",
-    render: (ctx, t) => {
-      const phase = ctx.x * 2.5 - t * 0.3;
-      const hue = (25 + 20 * Math.sin(phase * Math.PI * 2)) / 360;
-      return hslToRgb(hue, 0.75, 0.4);
-    },
+    description: "Drifting clouds of warm orange, brown, and gold, like leaves blowing across the house (after WLED 16's Color Clouds) — for Thanksgiving.",
+    render: fromSpec({ palette: [[200, 70, 0], [120, 50, 10], [230, 150, 20], [170, 30, 0]], pattern: "clouds", speed: 0.8, bandWidth: 0.2, brightnessMin: 0.3 }),
   },
   {
     id: "easter-pastels",
     name: "Easter Pastels",
-    description: "Soft pastel pink, lavender, and mint drifting across the house — for Easter.",
-    render: (ctx, t) => {
-      const phase = ctx.x * 3 - t * 0.35;
-      const hue = (300 + 120 * ((Math.sin(phase * Math.PI * 2) + 1) / 2)) % 360 / 360;
-      return hslToRgb(hue, 0.55, 0.7);
-    },
+    description: "Soft clouds of pastel pink, lavender, and mint drifting and morphing across the house (after WLED 16's Color Clouds) — for Easter.",
+    render: fromSpec({ palette: [[255, 150, 190], [190, 150, 255], [140, 240, 190], [255, 220, 150]], pattern: "clouds", speed: 0.6, bandWidth: 0.25, brightnessMin: 0.45 }),
   },
   // A one-off team/personal-color variant (e.g. a "game day" chase in one
   // household's team colors) belongs here as a local sceneSpec, not as a

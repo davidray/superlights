@@ -135,7 +135,8 @@ coordinate map). `play_scene_live` runs one by `id` on real hardware.
 
 `play_scene_live` also accepts an inline **scene spec** instead of an `id` —
 a color palette plus a pattern (`solid`, `wave`, `chase`, `twinkle`, `pulse`,
-`gradientDrift`, `fireworks`, `comet`, `rain`, `bounce`, `aurora`, `strobe`)
+`gradientDrift`, `fireworks`, `comet`, `rain`, `bounce`, `aurora`, `strobe`,
+`shimmer`, `clouds`, `dancingShadows`, `fireworks1d`, `lavaLamp`)
 with a few tunable knobs. That means a spontaneous, one-off request can just
 be asked for in plain language and run immediately, with no code change and
 no add-on release — as long as the *pattern* you want already exists; a

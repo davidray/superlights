@@ -13,7 +13,12 @@ export type ScenePattern =
   | "rain"
   | "bounce"
   | "aurora"
-  | "strobe";
+  | "strobe"
+  | "shimmer"
+  | "clouds"
+  | "dancingShadows"
+  | "fireworks1d"
+  | "lavaLamp";
 
 /**
  * An ad-hoc scene, built from data instead of a compiled render() function. Lets a
@@ -30,14 +35,19 @@ export interface SceneSpec {
   speed?: number;
   /** Fraction of the house per repeating band, for wave/chase/aurora. Also reused,
    *  pattern-specifically, as: fireworks' ring thickness, comet's trail length,
-   *  rain's column width, bounce's dot size. Smaller means more/thinner/narrower. */
+   *  rain's column width, bounce's dot size, shimmer's glint width, clouds' cloud
+   *  size, dancingShadows' beam width, fireworks1d's spark size, lavaLamp's blob
+   *  size. Smaller means more/thinner/narrower. */
   bandWidth?: number;
   direction?: 1 | -1;
   /** Fraction of LEDs lit at once, for twinkle. Also reused as fireworks' spark
-   *  texture density within a burst ring, and strobe's per-slot flash probability. */
+   *  texture density within a burst ring, strobe's per-slot flash probability, and
+   *  fireworks1d's spark count per burst. */
   sparkleDensity?: number;
   /** Brightness floor/ceiling (0-1). twinkle's background / pulse's & fireworks'
-   *  breathing-fade range / aurora's shimmer range / strobe's between-flash floor. */
+   *  breathing-fade range / aurora's shimmer range / strobe's between-flash floor /
+   *  shimmer's base-to-glint range / clouds' brightness range / dancingShadows' and
+   *  fireworks1d's and lavaLamp's background floor. */
   brightnessMin?: number;
   brightnessMax?: number;
 }
@@ -110,6 +120,58 @@ function fireworksBurst(
 
   const sparkle = hash(seed * 97 + Math.floor(dist * 977), Math.floor(dy * 613)) < sparkDensity ? 1 : 0.15;
   return { brightness: ringProximity * sparkle * fade(age / burstDuration), seed };
+}
+
+/** Smooth 1D value noise in [0,1]: hashed lattice values at integer u, eased between. */
+function valueNoise(seed: number, u: number): number {
+  const i = Math.floor(u);
+  const f = u - i;
+  const eased = f * f * (3 - 2 * f);
+  const a = hash(seed, i);
+  return a + (hash(seed, i + 1) - a) * eased;
+}
+
+/** One 1D firework "battery" (WLED 16's PS Fireworks 1D / PS Starburst, along the
+ *  roofline): a rocket streaks toward a random point, then bursts into sparks that fly
+ *  outward both ways, slowing under drag and fading. Returns this battery's brightness
+ *  at x plus the burst's seed (for picking its color); 0 when nothing is lit here. */
+function fireworks1dBurst(
+  streamSeed: number,
+  x: number,
+  t: number,
+  slotDuration: number,
+  sparkCount: number,
+  sparkWidth: number
+): { brightness: number; seed: number } {
+  const slotIndex = Math.floor(t / slotDuration);
+  const seed = slotIndex * 4 + streamSeed + 100;
+  if (hash(seed, 0) > 0.8) return { brightness: 0, seed }; // ~80% of slots launch
+
+  const age = t - slotIndex * slotDuration;
+  const launchDuration = slotDuration * 0.25;
+  const burstX = 0.12 + 0.76 * hash(seed, 1);
+  if (age < launchDuration) {
+    const from = hash(seed, 2) < 0.5 ? burstX - 0.3 : burstX + 0.3;
+    const head = from + (burstX - from) * (age / launchDuration);
+    const behind = (x - head) * Math.sign(burstX - from) * -1; // >0 is the trail side
+    if (behind < -sparkWidth) return { brightness: 0, seed };
+    return { brightness: 0.6 * Math.exp(-Math.max(0, behind) / 0.03), seed };
+  }
+
+  const sparkAge = (age - launchDuration) / (slotDuration - launchDuration); // 0..1
+  const drag = 4;
+  const travel = (1 - Math.exp(-drag * sparkAge)) / drag;
+  const fade = Math.pow(1 - sparkAge, 1.5);
+  let best = 0;
+  for (let k = 0; k < sparkCount; k++) {
+    const velocity = (hash(seed, 10 + k) - 0.5) * 2;
+    const pos = burstX + velocity * travel;
+    const glow = Math.exp(-Math.abs(x - pos) / sparkWidth);
+    // Late sparks crackle on and off instead of just dimming out.
+    const crackle = sparkAge > 0.5 && hash(seed * 31 + k, Math.floor(t * 20)) < 0.35 ? 0.2 : 1;
+    best = Math.max(best, glow * fade * crackle);
+  }
+  return { brightness: best, seed };
 }
 
 export function buildSceneFromSpec(spec: SceneSpec): Scene {
@@ -255,6 +317,109 @@ export function buildSceneFromSpec(spec: SceneSpec): Scene {
         frameMemo = { t, color };
         return color;
       }
+
+      case "shimmer": {
+        // WLED 16's Shimmer: a soft highlight glides across a dim, gently-breathing base
+        // at irregular intervals, like light catching satin.
+        const floor = spec.brightnessMin ?? 0.35;
+        const ceiling = spec.brightnessMax ?? 1;
+        const width = spec.bandWidth ?? 0.08;
+        const base = paletteAt(palette, ctx.x * 0.8 - t * speed * 0.03 * direction);
+        const breathe = 0.85 + 0.15 * valueNoise(ctx.deviceIndex, t * speed * 0.8);
+        const slotDuration = 4 / speed;
+        let glint = 0;
+        for (let stream = 0; stream < 2; stream++) {
+          const streamT = t + stream * slotDuration * 0.5;
+          const slotIndex = Math.floor(streamT / slotDuration);
+          if (hash(slotIndex * 2 + stream, 21) > 0.75) continue; // ~25% of slots stay quiet
+          const progress = (streamT - slotIndex * slotDuration) / slotDuration;
+          const head = -width * 2 + progress * (1 + width * 4);
+          const pos = direction === 1 ? head : 1 - head;
+          const d = (ctx.x - pos) / width;
+          glint = Math.max(glint, Math.exp(-d * d));
+        }
+        const color = lerpRgb(base, [255, 255, 255], 0.35 * glint);
+        return scaleRgb(color, (floor + (ceiling - floor) * glint) * breathe);
+      }
+
+      case "clouds": {
+        // WLED 16's Color Clouds: soft blobs of palette color drifting and morphing.
+        const scale = cycles ?? 4;
+        const drift = t * speed * 0.08 * direction;
+        const u = ctx.x * scale + ctx.y * 0.6 - drift;
+        const hueField = 0.7 * valueNoise(1, u) + 0.3 * valueNoise(2, u * 2.1 + t * speed * 0.05);
+        const color = paletteAt(palette, hueField * 1.25);
+        const floor = spec.brightnessMin ?? 0.25;
+        const ceiling = spec.brightnessMax ?? 1;
+        const density = valueNoise(3, ctx.x * scale * 1.3 + t * speed * 0.06 * direction);
+        return scaleRgb(color, floor + (ceiling - floor) * density);
+      }
+
+      case "dancingShadows": {
+        // WLED 16's PS Dancing Shadows: overlapping soft beams sliding back and forth at
+        // different rates, leaving moving pools of shadow between them.
+        const beamCount = Math.min(6, Math.max(3, palette.length * 2));
+        const baseWidth = spec.bandWidth ?? 0.07;
+        const floor = spec.brightnessMin ?? 0;
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        for (let i = 0; i < beamCount; i++) {
+          const rate = 0.25 + 0.35 * hash(i, 5);
+          const pos = 0.5 + 0.6 * Math.sin(t * speed * rate + hash(i, 6) * Math.PI * 2);
+          const width = baseWidth * (0.6 + 0.8 * hash(i, 7));
+          const d = (ctx.x - pos) / width;
+          const glow = Math.exp(-d * d);
+          const c = palette[i % palette.length];
+          r += c[0] * glow;
+          g += c[1] * glow;
+          b += c[2] * glow;
+        }
+        const bg = scaleRgb(palette[0], floor);
+        return [Math.min(255, Math.round(r) + bg[0]), Math.min(255, Math.round(g) + bg[1]), Math.min(255, Math.round(b) + bg[2])];
+      }
+
+      case "fireworks1d": {
+        const slotDuration = 2.2 / speed;
+        const sparkCount = Math.round(6 + 18 * (spec.sparkleDensity ?? 0.5));
+        const sparkWidth = spec.bandWidth ?? 0.012;
+        const floor = spec.brightnessMin ?? 0;
+        let best = { brightness: 0, seed: 0 };
+        for (let stream = 0; stream < 2; stream++) {
+          const streamT = t + stream * (slotDuration / 2);
+          const contribution = fireworks1dBurst(stream, ctx.x, streamT, slotDuration, sparkCount, sparkWidth);
+          if (contribution.brightness > best.brightness) best = contribution;
+        }
+        const bg = scaleRgb(palette[0], floor);
+        if (best.brightness <= 0) return bg;
+        const lit = scaleRgb(paletteStepAt(palette, hash(best.seed, 3)), best.brightness);
+        return [Math.max(bg[0], lit[0]), Math.max(bg[1], lit[1]), Math.max(bg[2], lit[2])];
+      }
+
+      case "lavaLamp": {
+        // WLED 16's Lava Lamp / Magma (user_fx): slow blobs that wander, swell, and merge,
+        // hottest (last palette color) at their cores.
+        const blobCount = 5;
+        const size = spec.bandWidth ?? 0.12;
+        const floor = spec.brightnessMin ?? 0.08;
+        let field = 0;
+        for (let i = 0; i < blobCount; i++) {
+          const pos = 0.5 + 0.55 * Math.sin(t * speed * (0.05 + 0.06 * hash(i, 31)) + hash(i, 32) * Math.PI * 2);
+          const radius = size * (0.7 + 0.5 * Math.sin(t * speed * 0.2 + i * 1.7));
+          const d = ctx.x - pos;
+          field += (radius * radius) / (d * d + radius * radius * 0.5);
+        }
+        const heat = clamp01((field - 0.35) / 1.5);
+        if (heat <= 0) return scaleRgb(palette[0], floor);
+        // Non-cyclic ramp from the first palette color (cool edge) to the last (hot core).
+        let color = palette[0];
+        if (palette.length > 1) {
+          const scaled = heat * (palette.length - 1);
+          const i = Math.min(palette.length - 2, Math.floor(scaled));
+          color = lerpRgb(palette[i], palette[i + 1], scaled - i);
+        }
+        return scaleRgb(color, floor + (1 - floor) * Math.min(1, heat * 1.6));
+      }
     }
   };
 
@@ -264,7 +429,7 @@ export function buildSceneFromSpec(spec: SceneSpec): Scene {
 /** Either a registered scene id (see scenes.ts) or an inline spec. */
 export type SceneRef = string | SceneSpec;
 
-const SCENE_PATTERNS: readonly ScenePattern[] = ["solid", "wave", "chase", "twinkle", "pulse", "gradientDrift", "fireworks", "comet", "rain", "bounce", "aurora", "strobe"];
+const SCENE_PATTERNS: readonly ScenePattern[] = ["solid", "wave", "chase", "twinkle", "pulse", "gradientDrift", "fireworks", "comet", "rain", "bounce", "aurora", "strobe", "shimmer", "clouds", "dancingShadows", "fireworks1d", "lavaLamp"];
 
 function assertOptionalNumber(value: unknown, field: string, { min, max, positive }: { min?: number; max?: number; positive?: boolean } = {}): void {
   if (value === undefined) return;

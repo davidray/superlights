@@ -132,6 +132,85 @@ test("strobe alternates between a dark floor and bright flashes, synchronized ac
   assert.ok(sawFloor, "expected a dark floor between flashes");
 });
 
+function assertValidRgb(color: number[], where: string): void {
+  for (const c of color) assert.ok(Number.isInteger(c) && c >= 0 && c <= 255, `channel out of range at ${where}: ${color}`);
+}
+
+test("shimmer: a glint passes over every point, brightening it well above the base", () => {
+  const scene = buildSceneFromSpec({ palette: [[0, 160, 40]], pattern: "shimmer", brightnessMin: 0.3 });
+  for (const x of [0.1, 0.5, 0.9]) {
+    let min = Infinity;
+    let max = 0;
+    for (let t = 0; t < 30; t += 0.05) {
+      const color = scene.render(ctxAt(x), t);
+      assertValidRgb(color, `x=${x},t=${t}`);
+      min = Math.min(min, color[1]);
+      max = Math.max(max, color[1]);
+    }
+    assert.ok(min < 160 * 0.35, `expected a dim base at x=${x}, min green ${min}`);
+    assert.ok(max > 160 * 0.8, `expected a glint to pass x=${x}, max green ${max}`);
+  }
+});
+
+test("clouds: varies smoothly along the house and stays within its brightness range", () => {
+  const scene = buildSceneFromSpec({ palette: [[255, 0, 0], [0, 0, 255]], pattern: "clouds", brightnessMin: 0.2, brightnessMax: 0.9 });
+  let previous = scene.render(ctxAt(0), 3);
+  for (let x = 0.005; x <= 1; x += 0.005) {
+    const color = scene.render(ctxAt(x), 3);
+    assertValidRgb(color, `x=${x}`);
+    assert.ok(color[0] + color[2] <= 255 * 0.9 + 1, `brighter than brightnessMax at x=${x}: ${color}`);
+    const jump = Math.abs(color[0] - previous[0]) + Math.abs(color[2] - previous[2]);
+    assert.ok(jump < 40, `expected a smooth gradient, jumped ${jump} at x=${x}`);
+    previous = color;
+  }
+});
+
+test("dancingShadows: leaves both lit beams and shadowed gaps along the house", () => {
+  const scene = buildSceneFromSpec({ palette: [[255, 100, 0], [110, 20, 160]], pattern: "dancingShadows" });
+  let sawBeam = false;
+  let sawShadow = false;
+  for (let x = 0; x <= 1; x += 0.01) {
+    const color = scene.render(ctxAt(x), 7);
+    assertValidRgb(color, `x=${x}`);
+    const sum = color[0] + color[1] + color[2];
+    if (sum > 250) sawBeam = true;
+    if (sum < 20) sawShadow = true;
+  }
+  assert.ok(sawBeam && sawShadow, `expected beams and shadows (beam ${sawBeam}, shadow ${sawShadow})`);
+});
+
+test("fireworks1d: bursts light up and spread out, and the background floor is honored", () => {
+  const scene = buildSceneFromSpec({ palette: [[255, 200, 70]], pattern: "fireworks1d", brightnessMin: 0.1 });
+  let maxLitSpan = 0;
+  for (let t = 0; t < 20; t += 0.1) {
+    let lit = 0;
+    for (let x = 0; x <= 1; x += 0.01) {
+      const color = scene.render(ctxAt(x), t);
+      assertValidRgb(color, `x=${x},t=${t}`);
+      assert.ok(color[0] >= 25, `expected the dim background floor, got ${color}`);
+      if (color[0] > 150) lit++;
+    }
+    maxLitSpan = Math.max(maxLitSpan, lit);
+  }
+  assert.ok(maxLitSpan >= 5, `expected bursts spreading over several LEDs, widest was ${maxLitSpan}`);
+});
+
+test("lavaLamp: blob cores reach the last palette color while gaps sit at the dim first color", () => {
+  const scene = buildSceneFromSpec({ palette: [[0, 0, 255], [255, 0, 0]], pattern: "lavaLamp", brightnessMin: 0.1 });
+  let hottest = 0;
+  let sawGap = false;
+  for (let t = 0; t < 60; t += 1) {
+    for (let x = 0; x <= 1; x += 0.02) {
+      const color = scene.render(ctxAt(x), t);
+      assertValidRgb(color, `x=${x},t=${t}`);
+      hottest = Math.max(hottest, color[0]);
+      if (color[0] === 0 && color[2] > 0 && color[2] <= 26) sawGap = true;
+    }
+  }
+  assert.ok(hottest > 200, `expected a hot core somewhere, hottest red ${hottest}`);
+  assert.ok(sawGap, "expected dim gaps between blobs");
+});
+
 test("assertSceneRef accepts a scene id and a well-formed spec", () => {
   assert.doesNotThrow(() => assertSceneRef("patriotic-wave"));
   assert.doesNotThrow(() => assertSceneRef({ name: "Game Day", palette: [[0, 46, 93], [255, 255, 255]], pattern: "chase", bandWidth: 0.125, speed: 0.17, direction: -1 }));

@@ -5,6 +5,17 @@ Versions here match `config.yaml`'s `version` — every bump is server-side code
 add-on rebuilds. Local-only changes (`index.ts`, `triggerServerClient.ts`)
 don't need a bump and aren't listed here.
 
+## 0.14.0
+
+- Scene colors are now gamma-corrected before they're streamed to the LEDs.
+  Palettes are written as screen (sRGB) colors, but WLED drives realtime DDP
+  data straight to the LEDs without its own gamma correction, so mixed colors
+  came out washed out: Halloween's orange read as yellow, BYU's blue looked
+  pale. Each channel is now corrected relative to the color's brightest
+  channel, so every scene gets stronger, truer colors while keeping the
+  brightness levels it was tuned for. Pure red, green, blue, white, and black
+  are unchanged. Applies to every built-in scene and inline scene spec.
+
 ## 0.13.0
 
 - Five new scene-spec patterns modeled on effects that arrived in WLED 16:

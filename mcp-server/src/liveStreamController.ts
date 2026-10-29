@@ -1,4 +1,5 @@
 import { DdpSender } from "./ddp.js";
+import { toLedColor } from "./colorCorrection.js";
 import { resolveDevice } from "./devices.js";
 import { loadCoordinateMap, allLedPositions } from "./coordinateMap.js";
 import { findScene, type Scene } from "./scenes.js";
@@ -126,7 +127,7 @@ export async function playSceneLive(device: string, sceneOrSpec: string | SceneS
   const tick = async () => {
     const t = (Date.now() - start) / 1000;
     try {
-      await sender.sendFrame(positions.map((p) => scene.render(p, t)));
+      await sender.sendFrame(positions.map((p) => toLedColor(scene.render(p, t))));
     } catch (err) {
       console.error(`[playSceneLive] send failed for ${device}: ${(err as Error).message}`);
     }
